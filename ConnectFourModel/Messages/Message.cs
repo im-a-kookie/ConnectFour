@@ -39,6 +39,13 @@ namespace Model.Messages
         public DateTime Expiration = DateTime.MaxValue;
 
         /// <summary>
+        /// A callback provided to the message that can be handled
+        /// after the message is completed
+        /// </summary>
+        public Action<Message>? CompletionCallback;
+
+
+        /// <summary>
         /// Create a message with the given sender/receiver and content
         /// </summary>
         /// <param name="sender"></param>

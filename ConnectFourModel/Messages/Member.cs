@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -56,6 +57,11 @@ namespace Model.Messages
         public event MessageEvent? OnReceiveMessage;
 
         /// <summary>
+        /// Called when the thread begins processing a message
+        /// </summary>
+        public event MessageEvent? OnMessageProcess;
+
+        /// <summary>
         /// Called specifically when the member receives a signal
         /// </summary>
         public event SignalEvent? OnReceiveSignal;
@@ -102,33 +108,51 @@ namespace Model.Messages
                 Member sender = m.Sender ?? Parent.Instance!;
 
                 //we received a message, yay
-                OnReceiveMessage?.Invoke(EventType.RECEIVE, m);
+                try
+                {
+                    OnMessageProcess?.Invoke(EventType.RECEIVE, m);
+                }
+                catch (Exception e)
+                {
+                    Parent.NotifyException(this, e);
+                }
 
                 //It wasn't handled yet
                 if (!m.Handled)
                 {
                     //So let's see if there's a signal handler for this header
                     var p = Parent.Router.GetSignalProcessor(m.MessageBody);
-                    if (p != null) p?.callback(this, m.MessageBody.header, p?.flag);
-                }
-
-                //The message wasn't handled yet
-                if(!m.Handled)
-                {
-                    //Now let's check if the message was actually a data object
-                    if((m.MessageBody.header & Router.TYPEFLAG) != 0)
+                    if (p != null)
                     {
-                        try
-                        {
-                            //unpack the data and receive it
-                            var data = Parent.Router.UnpackContent(m.MessageBody);
-                            OnReceiveData?.Invoke(EventType.RECEIVE, data, sender);
-                        }
-                        catch { }
+                        try { OnReceiveSignal?.Invoke(EventType.RECEIVE, m.HeaderName, p.Value.flag, sender); }
+                        catch (Exception e) { Parent.NotifyException(this, e); }
+
+                        try { if (!m.Handled) p?.callback(this, m.MessageBody.header, p?.flag); }
+                        catch (Exception e) {  Parent.NotifyException(this, e); }
                     }
+                    //The message wasn't handled yet
+                    if (!m.Handled)
+                    {
+                        //Now let's check if the message was actually a data object
+                        if ((m.MessageBody.header & Router.TYPEFLAG) != 0)
+                        {
+                            try
+                            {
+                                //unpack the data and receive it
+                                var data = Parent.Router.UnpackContent(m.MessageBody);
+                                OnReceiveData?.Invoke(EventType.RECEIVE, data, sender);
+                            }
+                            catch (Exception e) {
+                                Parent.NotifyException(this, e);
+                            }
+                        }
+                    }
+
+                    //Finally, process the completion callback
+                    m.CompletionCallback?.Invoke(m);
+                    
                 }
             }
-            
         }
 
         /// <summary>
@@ -165,8 +189,23 @@ namespace Model.Messages
             //don't queue expired messages
             //TODO discarded messages should be logged
             if (m.Expiration < DateTime.UtcNow) return;
-            Queue.Add(m);
-            OnReceiveMessage?.Invoke(EventType.RECEIVE, m);
+
+
+            //invoke the recipient event
+            try
+            {
+                OnReceiveMessage?.Invoke(EventType.RECEIVE, m);
+            }
+            catch(Exception e)
+            {
+                Parent.NotifyException(this, e);
+            }
+
+            //and log it if it hasn't been handled
+            if(!m.Handled)
+            {
+                Queue.Add(m);
+            }
         }
 
         /// <summary>

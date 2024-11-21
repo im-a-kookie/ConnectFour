@@ -88,6 +88,15 @@ namespace Model
             _running = false;
         }
 
+        /// <summary>
+        /// Notifies the provider that an exception was thrown and caught by a member
+        /// </summary>
+        /// <param name="m"></param>
+        /// <param name="e"></param>
+        public void NotifyException(Member m, Exception e)
+        {
+
+        }
         internal void NotifyShutdown()
         {
             _running = false;

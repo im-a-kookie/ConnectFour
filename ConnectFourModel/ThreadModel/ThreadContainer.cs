@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Model.Messages;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -14,6 +15,8 @@ namespace Model.ThreadModel
     {
         //The Core instance that hosts this ThreadContainer model
         public Provider Parent;
+
+        public Member ModelInstance;
 
         /// <summary>
         /// The Host thread for this container
@@ -78,9 +81,10 @@ namespace Model.ThreadModel
         /// Creates a new Thread container
         /// </summary>
         /// <param name="parent"></param>
-        public ThreadContainer(Provider parent)
+        public ThreadContainer(Provider parent, Member m)
         {
             this.Parent = parent;
+            this.ModelInstance = m;
         }
 
         public void Close()
@@ -165,6 +169,7 @@ namespace Model.ThreadModel
                         {
                             // Log or handle errors during loop processing
                             //Parent.HandleThreadException(this, ex);
+                            Parent.NotifyException(ModelInstance, ex);
                         }
                     }
 
@@ -194,6 +199,7 @@ namespace Model.ThreadModel
             {
                 // Log unexpected errors
                 //Parent.HandleThreadException(this, ex);
+                Parent.NotifyException(ModelInstance, ex);
             }
             finally
             {
@@ -205,6 +211,7 @@ namespace Model.ThreadModel
                 {
                     // Log cleanup errors
                     //Parent.HandleThreadException(this, ex);
+                    Parent.NotifyException(ModelInstance, ex);
                 }
 
                 _running = false;

@@ -6,38 +6,38 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Model.Messages
+namespace ConnectFour.Messages
 {
-    public class MemberRegistry
+    public class ModelRegistry
     {
         public Provider Parent;
 
-        public MemberRegistry(Provider parent)
+        public ModelRegistry(Provider parent)
         {
             this.Parent = parent;
         }
 
         /// <summary>
-        /// The dictionary of all members mapped to their address
+        /// The dictionary of all models mapped to their address
         /// </summary>
-        public ConcurrentDictionary<ulong, Member> members = [];
+        public ConcurrentDictionary<ulong, Model> models = [];
 
         /// <summary>
         /// Deregisters the given messageable
         /// </summary>
         /// <param name="m"></param>
-        public void Deregister(Member m)
+        public void Deregister(Model m)
         {
-            members.TryRemove(m.ID.GetRaw(), out _);
+            models.TryRemove(m.ID.GetRaw(), out _);
         }
 
         /// <summary>
         /// Registers the given messageable
         /// </summary>
         /// <param name="m"></param>
-        public void Register(Member m)
+        public void Register(Model m)
         {
-            members.TryAdd(m.ID.GetRaw(), m);
+            models.TryAdd(m.ID.GetRaw(), m);
         }
 
         /// <summary>
@@ -48,7 +48,7 @@ namespace Model.Messages
         public bool SendMessage(Message message)
         {
             var k = message.Destination.GetRaw();
-            if(members.TryGetValue(k, out var m))
+            if(models.TryGetValue(k, out var m))
             {
                 m.ReceiveMessage(message);
                 return true;
@@ -59,13 +59,13 @@ namespace Model.Messages
         /// <summary>
         /// Sends a signal to the given sender.
         /// 
-        /// <para>Passes to <see cref="SendMessage(Content, Identifier?, Member?)"/></para>
+        /// <para>Passes to <see cref="SendMessage(Content, Identifier?, Model?)"/></para>
         /// </summary>
         /// <param name="sender">The sender</param>
         /// <param name="signal">The signal</param>
         /// <param name="destination">The destination</param>
         /// <returns></returns>
-        public bool SendSignal(string signal, Identifier? destination = null, Member? sender = null)
+        public bool SendSignal(string signal, Identifier? destination = null, Model? sender = null)
         {
             return SendMessage(
                 packet: Parent.Router.PackSignal(signal), 
@@ -76,13 +76,13 @@ namespace Model.Messages
         /// <summary>
         /// Sends a signal to the given sender.
         /// 
-        /// <para>Passes to <see cref="SendMessage(Content, Identifier?, Member?)"/></para>
+        /// <para>Passes to <see cref="SendMessage(Content, Identifier?, Model?)"/></para>
         /// </summary>
         /// <param name="sender">The sender</param>
         /// <param name="signal">The signal</param>
         /// <param name="destination">The destination</param>
         /// <returns></returns>
-        public bool SendSignal(string signal, string flag, Identifier? destination = null, Member? sender = null)
+        public bool SendSignal(string signal, string flag, Identifier? destination = null, Model? sender = null)
         {
             return SendMessage(
                 packet: Parent.Router.PackSignal(signal, flag),
@@ -93,13 +93,13 @@ namespace Model.Messages
         /// <summary>
         /// Sends a signal to the given sender.
         /// 
-        /// <para>Passes to <see cref="SendMessage(Content, Identifier?, Member?)"/></para>
+        /// <para>Passes to <see cref="SendMessage(Content, Identifier?, Model?)"/></para>
         /// </summary>
         /// <param name="sender">The sender</param>
         /// <param name="signal">The signal</param>
         /// <param name="destination">The destination</param>
         /// <returns></returns>
-        public bool SendSignal(string signal, int flag, Identifier? destination = null, Member? sender = null)
+        public bool SendSignal(string signal, int flag, Identifier? destination = null, Model? sender = null)
         {
             return SendMessage(
                 packet: Parent.Router.PackSignal(signal, flag),
@@ -110,13 +110,13 @@ namespace Model.Messages
         /// <summary>
         /// Sends a signal to the given sender.
         /// 
-        /// <para>Passes to <see cref="SendMessage(Content, Identifier?, Member?)"/></para>
+        /// <para>Passes to <see cref="SendMessage(Content, Identifier?, Model?)"/></para>
         /// </summary>
         /// <param name="sender">The sender</param>
         /// <param name="signal">The signal</param>
         /// <param name="destination">The destination</param>
         /// <returns></returns>
-        public bool SendSignal(string signal, byte[] flag, Identifier? destination = null, Member? sender = null)
+        public bool SendSignal(string signal, byte[] flag, Identifier? destination = null, Model? sender = null)
         {
             return SendMessage(
                 packet: Parent.Router.PackSignal(signal, flag),
@@ -125,7 +125,7 @@ namespace Model.Messages
         }
 
 
-        public bool SendData<T>(T data, Identifier? destination = null, Member? sender = null) where T: notnull
+        public bool SendData<T>(T data, Identifier? destination = null, Model? sender = null) where T: notnull
         {
             try
             {
@@ -150,7 +150,7 @@ namespace Model.Messages
         /// <param name="destination">The destination. Defaults to the host if null</param>
         /// <param name="message">The body of the message</param>
         /// <returns>True if the destination was valid, otherwise false</returns>
-        public bool SendMessage(Content packet, Identifier? destination = null, Member? sender = null)
+        public bool SendMessage(Content packet, Identifier? destination = null, Model? sender = null)
         {
             //default 
             if (destination == null) destination = Parent.Instance!.ID;

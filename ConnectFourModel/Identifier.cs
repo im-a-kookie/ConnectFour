@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Model
+namespace ConnectFour
 {
     /// <summary>
     /// An identifier object with size consistency and automatic handling of padding

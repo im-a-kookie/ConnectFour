@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Model
+namespace ConnectFour
 {
     internal class LCG
     {
@@ -28,6 +28,12 @@ namespace Model
             return (double)NextInt() / (double)int.MaxValue;
         }
 
+        public float NextFloat()
+        {
+            //bithaxxor
+            int n = NextInt() & 0x3FFFFFFF;
+            return BitConverter.Int32BitsToSingle(n) / 2;
+        }
 
     }
 }

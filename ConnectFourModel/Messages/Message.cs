@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Model.Messages
+namespace ConnectFour.Messages
 {
     public class Message
     {
@@ -16,7 +16,7 @@ namespace Model.Messages
         /// <summary>
         /// The string identifier of the sender
         /// </summary>
-        public Member? Sender;
+        public Model? Sender;
 
         /// <summary>
         /// The destination identifier for the message
@@ -51,7 +51,7 @@ namespace Model.Messages
         /// <param name="sender"></param>
         /// <param name="destination"></param>
         /// <param name="message"></param>
-        public Message(Router registry, Member? sender, Identifier destination, Content message)
+        public Message(Router registry, Model? sender, Identifier destination, Content message)
         {
             this.Registry = registry;
             this.Sender = sender; 

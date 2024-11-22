@@ -1,5 +1,5 @@
-﻿using Model.Messages;
-using Model.ThreadModel;
+﻿using ConnectFour.Messages;
+using ConnectFour.ThreadModel;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -8,9 +8,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Model
+namespace ConnectFour
 {
-    public class Core : Member
+    public class Core : Messages.Model
     {
 
        
@@ -23,31 +23,36 @@ namespace Model
 
 
 
-        public Core(Provider parent, MemberRegistry registry) : base(parent)
+        public Core(Provider parent, ModelRegistry registry) : base(parent)
         {
             OnReceiveMessage += Core_OnReceiveMessage;
         }
 
+
         private void Core_OnReceiveMessage(EventType e, Message m)
         {
+            //check if the message is an exit message
             if(m.HeaderName == "exit")
             {
-                List<Member> members = new List<Member>();
-                foreach(var member in Parent.Members.members.Values)
+                //now we should retrieve all of the models in the provider
+                List<Messages.Model> models = new List<Messages.Model>();
+                foreach(var model in Parent.Models.models.Values)
                 {
-                    if (member is Core) continue;
-                    SendSignal("exit", member);
-                    members.Add(member);
+                    //now signal all of them (except for the Core, which should only be us) to exit
+                    if (model is Core) continue;
+                    SendSignal("exit", model); //tell it to bonk
+                    models.Add(model);
                 }
-
+                //now count all of the models that are running
                 int running = 0;
                 while (running > 0)
                 {
+                    //now we're just going to wait until all of the models are terminated
                     Thread.Sleep(1);
                     running = 0;
-                    foreach (var member in members)
+                    foreach (var model in models)
                     {
-                        if (member.Host?.Alive ?? false) ++running;
+                        if (model.Host?.IsAlive ?? false) ++running;
                     }
                 }
 

@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Model.Messages
+namespace ConnectFour.Messages
 {
     public abstract class ContentProvider {
         public readonly Type type;

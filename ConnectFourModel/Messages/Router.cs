@@ -1,16 +1,19 @@
-﻿using System;
+﻿using ConnectFour.Attributes;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Model.Messages
+namespace ConnectFour.Messages
 {
     public class Router
     {
 
-        public delegate void SignalProcessor(Member receiver, ushort id, object? ext = null);
+        public delegate void SignalProcessor(Model receiver, ushort id, object? ext = null);
+
+        
 
         /// <summary>
         /// A list of message Ids registered here
@@ -33,12 +36,12 @@ namespace Model.Messages
         /// <summary>
         /// A mapping of string name to message index/ID
         /// </summary>
-        public Dictionary<string, int> _nameIndexMap = [];
+        private Dictionary<string, int> _nameIndexMap = [];
 
         /// <summary>
         /// A mapping of allowed types to type providers
         /// </summary>
-        public Dictionary<Type, int> _typeProviderMap = [];
+        private Dictionary<Type, int> _typeProviderMap = [];
 
         /// <summary>
         /// Bit flag indicating header contains custom typed data
@@ -58,14 +61,27 @@ namespace Model.Messages
         const int INTMASK = 0b0100000000000000;
         const int BYTEMASK = 0b0110000000000000;
 
+        private bool built = false;
+
+        /// <summary>
+        /// Locks the router from modification after this point
+        /// </summary>
+        public void BuildRouter()
+        {
+            lock(this)
+            {
+                built = true;
+            }
+        }
+
         public Router()
         {
             RegisterControlSignal("exit", (i, id, ext) => {
-                i.Host?.Close();
+                i.Host?.Kill();
             });
 
             RegisterControlSignal("suspend", (i, id, ext) => {
-                i.Host?.Suspend();
+                i.Host?.Pause();
             });
 
         }
@@ -77,8 +93,13 @@ namespace Model.Messages
         /// <param name="handler"></param>
         public void RegisterControlSignal(string name, SignalProcessor handler)
         {
+            //generally, the construction of the internal tables is not threadsafe for RW,
+            //and is only threadsafe for reads, but the initialization is relatively inexpensive
+            //so it's okay to do this tbh
             lock(this)
             {
+                if (built) throw new Exception("Cannot register after router finalization");
+
                 int index = _ids.Count;
                 if (index > 4000) throw new Exception("Message registry full!");
                 _ids.Add((ushort)index);
@@ -97,6 +118,7 @@ namespace Model.Messages
         /// <exception cref="Exception"></exception>
         public Content PackSignal(string signal, object? flag = null)
         {
+            //lookup the signal name from the registry
             if(_nameIndexMap.TryGetValue(signal, out var index))
             {
                 int header = _ids[index];
@@ -122,33 +144,64 @@ namespace Model.Messages
                 }
                 return c;
             }
+            var obj = GetPacketObject(new Content());
             throw new Exception("Signal not recognized!");
+        }
+
+        public object? GetPacketObject(Content content) => GetPacketObject<object?>(content);
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="content"></param>
+        /// <returns></returns>
+        public T? GetPacketObject<T>(Content content)
+        {
+            int n = content.header & TYPEMASK;
+            if (n != 0)
+            {
+                return UnpackContent<T>(content);
+            }
+            else
+            {
+                //flip the signal mask and erase all other bits
+                n &= ~SIGNALMASK;
+                switch(n)
+                {
+                    case STRINGMASK:
+                        if (typeof(T).IsAssignableTo(typeof(string))) return (T)(object)Encoding.UTF8.GetString(content.body);
+                        break;
+                    case BYTEMASK:
+                        if (typeof(T).IsAssignableTo(typeof(byte[]))) return (T)(object)content.body;
+                        break;
+                    case INTMASK:
+                        if (typeof(T).IsAssignableTo(typeof(int))) return (T)(object)BitConverter.ToInt32(content.body);
+                        break;
+                }
+            }
+            return default;
         }
 
         /// <summary>
         /// Gets the receiver delegate for the given message data
         /// </summary>
-        /// <param name="content"></param>
-        /// <returns></returns>
-        public (SignalProcessor callback, object? flag)? GetSignalProcessor(Content content)
+        /// <param name="content">The message content</param>
+        /// <returns>An object decoding of the content packet, or null if no processor associated</returns>
+        public SignalProcessor? GetSignalProcessor(Content content)
         {
+            //check the header. If the MSB is set, then it means this is a typed data
+            //if we strip this, we can get the index of the message signal easily
             int n = content.header & TYPEMASK;
             if (n < 0 || n > _signalHandlers.Count) return null;
-
-            //convert the content body into an object
-            object? flag = null;
-            int headerType = n >> 14;
-            switch(headerType)
+            try
             {
-                case 0: break;
-                case 1: flag = Encoding.UTF8.GetString(content.body); break;
-                case 2: flag = BitConverter.ToInt32(content.body, 0); break;
-                case 3: flag = content.body; break;
+                return _signalHandlers[n];
             }
-
-            //pack
-            return (_signalHandlers[n]!, flag);
-
+            catch
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -171,10 +224,12 @@ namespace Model.Messages
         /// <param name="packer"></param>
         /// <param name="unpacker"></param>
         /// <param name="handler"></param>
-        public void RegisterTypeInterpreter<T>(ContentProvider<T>.Packer packer, ContentProvider<T>.Unpacker unpacker, SignalProcessor? handler)
+        public void RegisterTypeInterpreter<T>(SignalProcessor? handler, ContentProvider<T>.Packer packer, ContentProvider<T>.Unpacker unpacker)
         {
-            lock(this)
+            lock (this)
             {
+                if (built) throw new Exception("Cannot register after router finalization");
+
                 string? n = typeof(T).FullName;
                 if (n == null) return;
 
@@ -188,9 +243,7 @@ namespace Model.Messages
                 //now generate the provider
                 var m = new ContentProvider<T>(n, index, packer, unpacker);
                 _typeProviderMap.Add(typeof(T), index);
-
             }
-
         }
 
         /// <summary>
@@ -234,14 +287,22 @@ namespace Model.Messages
         /// Unpacks the data stored in the given message
         /// </summary>
         /// <param name="content"></param>
-        /// <returns>The object, or null if no data is present</returns>
+        /// <returns>The object that was stored in the content, or null if no data</returns>
         /// <exception cref="FormatException">Thrown if data is present but not convertible</exception>
-        public object? UnpackContent(Content content)
+        public object? UnpackContent(Content content) => UnpackContent<object>(content);
+
+        /// <summary>
+        /// Unpacks the data stored in the given message
+        /// </summary>
+        /// <param name="content"></param>
+        /// <returns>The object, or null if no data is present</returns>
+        /// <exception cref="FormatException">Thrown if data is present but not convertible to the specified type</exception>
+        public T? UnpackContent<T>(Content content)
         {
             //The header represents the index in the type lists
             int header = content.header;
             //the content is an untyped signal
-            if (content.Data.Length <= 2 || (header & TYPEFLAG) == 0) return null;
+            if (content.Data.Length <= 2 || (header & TYPEFLAG) == 0) return default(T);
 
             //now convert it back to the data value
             header &= TYPEMASK;
@@ -267,8 +328,10 @@ namespace Model.Messages
                 {
                     throw new FormatException("Invalid Data");
                 }
-                if (result == null) throw new FormatException("Invalid Data");
-                return result;
+                //make sure we actually got something useful
+                if (result == null || !(result is T)) 
+                    throw new FormatException($"Data does not match: {typeof(T)}");
+                return (T)result;
             }
             //otherwise bonk
             throw new FormatException($"Unrecognized Header [{header}]");

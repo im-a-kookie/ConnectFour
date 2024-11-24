@@ -1,4 +1,4 @@
-﻿using ConnectFour.Messages;
+﻿using ConnectFour.Messaging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -10,9 +10,8 @@ using System.Threading.Tasks;
 namespace ConnectFour.ThreadModel.PerModel
 {
     /// <summary>
-    /// This parallel schema provides container objects hosted in their own threads. This is generally
-    /// good when the application involves a small number of long-lived or high-throughput models, due
-    /// to the overheads of creating and scheduling large numbers of threads.
+    /// This parallel schema provides container objects hosted by dedicated threads. Additional configuration is available
+    /// to provide multiple models to each threaded container.
     /// 
     /// <para>Where large numbers of models are required, consider <see cref="Pool.ParallelPool"/>.</para>
     /// </summary>

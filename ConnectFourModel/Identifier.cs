@@ -56,7 +56,8 @@ namespace ConnectFour
         /// <param name="s"></param>
         public Identifier(string s)
         {
-            s = s.PadRight(8, ' ').Substring(8);
+            s = s.PadRight(8, ' ');
+            if (s.Length > 8) s = s.Remove(8);
             var b = Encoding.ASCII.GetBytes(s);
             ID = BitConverter.ToUInt64(b);
         }

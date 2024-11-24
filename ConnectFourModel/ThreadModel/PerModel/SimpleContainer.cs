@@ -1,4 +1,4 @@
-﻿using ConnectFour.Messages;
+﻿using ConnectFour.Messaging;
 using ConnectFour.ThreadModel.Pool;
 using System;
 using System.Collections.Concurrent;
@@ -128,7 +128,7 @@ namespace ConnectFour.ThreadModel.PerModel
 
             //Set some initial stuff
             var timer = Stopwatch.StartNew();
-            Parent.NotifyThreadStart(this);
+            Parent.NotifyThreadStart();
 
             try
             {
@@ -214,7 +214,7 @@ namespace ConnectFour.ThreadModel.PerModel
                     //now deset all the thingos
                     _running = false;
                     Parent.ShutdownEvent -= OnShutdown;
-                    Parent.NotifyThreadEnd(this);
+                    Parent.NotifyThreadEnd();
                     _alive = false;
                     CallOnClose();
                 }

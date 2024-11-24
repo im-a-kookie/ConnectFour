@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ConnectFour.Messaging.Packets;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -6,7 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ConnectFour.Messages
+namespace ConnectFour.Messaging
 {
     public class ModelRegistry
     {
@@ -45,15 +46,9 @@ namespace ConnectFour.Messages
         /// </summary>
         /// <param name="message"></param>
         /// <returns>True if the destination was valid, otherwise false</returns>
-        public bool SendMessage(Message message)
+        public bool SendMessage(Signal message)
         {
-            var k = message.Destination.GetRaw();
-            if(models.TryGetValue(k, out var m))
-            {
-                m.ReceiveMessage(message);
-                return true;
-            }
-            return false;
+            return message.Destination.ReceiveMessage(message);
         }
 
         /// <summary>
@@ -65,27 +60,11 @@ namespace ConnectFour.Messages
         /// <param name="signal">The signal</param>
         /// <param name="destination">The destination</param>
         /// <returns></returns>
-        public bool SendSignal(string signal, Identifier? destination = null, Model? sender = null)
+        public bool SendSignal(string signal, object? data = null, Model? destination = null, Model? sender = null)
         {
-            return SendMessage(
-                packet: Parent.Router.PackSignal(signal), 
-                destination: destination, 
-                sender: sender);
-        }
 
-        /// <summary>
-        /// Sends a signal to the given sender.
-        /// 
-        /// <para>Passes to <see cref="SendMessage(Content, Identifier?, Model?)"/></para>
-        /// </summary>
-        /// <param name="sender">The sender</param>
-        /// <param name="signal">The signal</param>
-        /// <param name="destination">The destination</param>
-        /// <returns></returns>
-        public bool SendSignal(string signal, string flag, Identifier? destination = null, Model? sender = null)
-        {
             return SendMessage(
-                packet: Parent.Router.PackSignal(signal, flag),
+                packet: Parent.Router.PackSignal(signal),
                 destination: destination,
                 sender: sender);
         }
@@ -99,46 +78,54 @@ namespace ConnectFour.Messages
         /// <param name="signal">The signal</param>
         /// <param name="destination">The destination</param>
         /// <returns></returns>
-        public bool SendSignal(string signal, int flag, Identifier? destination = null, Model? sender = null)
+        public bool SendSignal(string signal, Identifier? destination = null, Model? sender = null, object? data = null)
         {
-            return SendMessage(
-                packet: Parent.Router.PackSignal(signal, flag),
-                destination: destination,
-                sender: sender);
+            Model? dest = null;
+            if (destination == null) dest = Parent.Instance;
+            else Parent.Models.models.TryGetValue(destination.GetRaw(), out dest);
+            return SendSignal(signal, data, dest, sender);
         }
 
         /// <summary>
-        /// Sends a signal to the given sender.
-        /// 
-        /// <para>Passes to <see cref="SendMessage(Content, Identifier?, Model?)"/></para>
+        /// Sends a signal using a typed data object
         /// </summary>
-        /// <param name="sender">The sender</param>
-        /// <param name="signal">The signal</param>
-        /// <param name="destination">The destination</param>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="signal"></param>
+        /// <param name="data"></param>
+        /// <param name="destination"></param>
+        /// <param name="sender"></param>
         /// <returns></returns>
-        public bool SendSignal(string signal, byte[] flag, Identifier? destination = null, Model? sender = null)
-        {
-            return SendMessage(
-                packet: Parent.Router.PackSignal(signal, flag),
-                destination: destination,
-                sender: sender);
-        }
-
-
-        public bool SendData<T>(T data, Identifier? destination = null, Model? sender = null) where T: notnull
+        public bool SendSignal<T>(string signal, T? data, Model? destination = null, Model? sender = null) where T: notnull
         {
             try
             {
-               return SendMessage(
-                   packet:Parent.Router.PackContent<T>(data), 
-                   destination: destination, 
-                   sender: sender);
+                return SendMessage(
+                        packet: Parent.Router.PackSignal<T>(signal, data),
+                        destination: destination,
+                        sender: sender);
             }
             catch
             {
                 //this is probably fine
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Sends signal using a typed data object
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="signal"></param>
+        /// <param name="data"></param>
+        /// <param name="destination"></param>
+        /// <param name="sender"></param>
+        /// <returns></returns>
+        public bool SendSignal<T>(string signal, T? data, Identifier? destination = null, Model? sender = null) where T : notnull
+        {
+            Model? dest = null;
+            if (destination == null) dest = Parent.Instance;
+            else Parent.Models.models.TryGetValue(destination.GetRaw(), out dest);
+            return SendSignal<T>(signal, data, dest, sender);
         }
 
 
@@ -150,12 +137,12 @@ namespace ConnectFour.Messages
         /// <param name="destination">The destination. Defaults to the host if null</param>
         /// <param name="message">The body of the message</param>
         /// <returns>True if the destination was valid, otherwise false</returns>
-        public bool SendMessage(Content packet, Identifier? destination = null, Model? sender = null)
+        public bool SendMessage(Content packet, Model? destination = null, Model? sender = null)
         {
             //default 
-            if (destination == null) destination = Parent.Instance!.ID;
+            if (destination == null) destination = Parent.Instance!;
             if (sender == null) sender = Parent.Instance!;
-            return SendMessage(new Message(Parent.Router, sender, destination, packet));
+            return SendMessage(new Signal(Parent.Router, sender, destination, packet));
         }
 
     }

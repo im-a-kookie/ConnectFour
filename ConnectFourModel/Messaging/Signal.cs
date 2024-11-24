@@ -1,12 +1,13 @@
-﻿using System;
+﻿using ConnectFour.Messaging.Packets;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ConnectFour.Messages
+namespace ConnectFour.Messaging
 {
-    public class Message
+    public class Signal
     {
         /// <summary>
         /// The registry that provided this message
@@ -21,7 +22,7 @@ namespace ConnectFour.Messages
         /// <summary>
         /// The destination identifier for the message
         /// </summary>
-        public Identifier Destination;
+        public Model Destination;
 
         /// <summary>
         /// The string body of the message
@@ -42,7 +43,7 @@ namespace ConnectFour.Messages
         /// A callback provided to the message that can be handled
         /// after the message is completed
         /// </summary>
-        public Action<Message>? CompletionCallback;
+        public Action<Signal>? CompletionCallback;
 
 
         /// <summary>
@@ -51,7 +52,7 @@ namespace ConnectFour.Messages
         /// <param name="sender"></param>
         /// <param name="destination"></param>
         /// <param name="message"></param>
-        public Message(Router registry, Model? sender, Identifier destination, Content message)
+        public Signal(Router registry, Model? sender, Model destination, Content message)
         {
             this.Registry = registry;
             this.Sender = sender; 
@@ -64,6 +65,24 @@ namespace ConnectFour.Messages
         /// </summary>
         public string HeaderName => Registry.GetHeaderName(MessageBody);
 
+
+        public object? UnpackData()
+        {
+            if(MessageBody is Content<PackedData> data)
+            {
+                return Registry.UnpackContent(data);
+            }
+            return null;
+        }
+
+        public T? UnpackData<T>()
+        {
+            if (MessageBody is Content<PackedData> data)
+            {
+                return Registry.UnpackContent<T>(data);
+            }
+            return default;
+        }
 
 
     }

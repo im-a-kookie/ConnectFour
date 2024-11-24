@@ -1,4 +1,4 @@
-﻿using ConnectFour.Messages;
+﻿using ConnectFour.Messaging;
 using ConnectFour.ThreadModel;
 using System;
 using System.Collections.Concurrent;
@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace ConnectFour
 {
-    public class Core : Messages.Model
+    public class Core : Messaging.Model
     {
 
        
@@ -25,17 +25,17 @@ namespace ConnectFour
 
         public Core(Provider parent, ModelRegistry registry) : base(parent)
         {
-            OnReceiveMessage += Core_OnReceiveMessage;
+            OnReceiveSignal += Core_OnReceiveSignal;
         }
 
-
-        private void Core_OnReceiveMessage(EventType e, Message m)
+        private void Core_OnReceiveSignal(EventType e, string signal, object? data, Signal instance)
         {
-            //check if the message is an exit message
-            if(m.HeaderName == "exit")
+
+            //check if the signal is an exit signal
+            if(signal == "exit")
             {
                 //now we should retrieve all of the models in the provider
-                List<Messages.Model> models = new List<Messages.Model>();
+                List<Messaging.Model> models = new List<Messaging.Model>();
                 foreach(var model in Parent.Models.models.Values)
                 {
                     //now signal all of them (except for the Core, which should only be us) to exit

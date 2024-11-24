@@ -1,4 +1,4 @@
-﻿using ConnectFour.Messages;
+﻿using ConnectFour.Messaging;
 using ConnectFour.ThreadModel.PerModel;
 using ConnectFour.ThreadModel.Pool;
 using System;
@@ -30,7 +30,7 @@ namespace ConnectFour.ThreadModel
         /// <summary>
         /// Called when the given model is discarded from this host
         /// </summary>
-        public event Action<Messages.Model, ModelContainer>? Discard;
+        public event Action<Messaging.Model, ModelContainer>? Discard;
 
         /// <summary>
         /// The minimum duration of time for each loop. For example,

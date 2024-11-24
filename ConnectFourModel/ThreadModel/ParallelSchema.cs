@@ -1,4 +1,4 @@
-﻿using ConnectFour.Messages;
+﻿using ConnectFour.Messaging;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -69,8 +69,10 @@ namespace ConnectFour.ThreadModel
         public ModelContainer ProvideHost(Model requester)
         {
             var container = CreateContainer(requester);
+            //ensure we can track it
             _ContainerRegistry.TryAdd(container, true);
             container.OnClose += (m) => _ContainerRegistry.TryRemove(m, out _);
+            container.StartHost();
             return container;
         }
 

@@ -1,5 +1,5 @@
 ﻿using ConnectFour;
-using ConnectFour.Messages;
+using ConnectFour.Messaging;
 using ConnectFour.ThreadModel;
 using ConnectFour.ThreadModel.PerModel;
 using System;

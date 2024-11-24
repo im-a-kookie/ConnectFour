@@ -10,9 +10,9 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Reflection.PortableExecutable;
 
-namespace ConnectFour.Messages
+namespace ConnectFour.Messaging
 {
-    public abstract class Model : IDisposable
+    public class Model : IDisposable
     {
 
         /// <summary>
@@ -29,48 +29,38 @@ namespace ConnectFour.Messages
         public readonly Provider Parent;
 
         /// <summary>
-        /// Signature definition for all message events
-        /// </summary>
-        /// <param name="e"></param>
-        /// <param name="m"></param>
-        public delegate void MessageEvent(EventType e, Message m);
-
-        /// <summary>
         /// Signature definition for signal events
         /// </summary>
         /// <param name="e"></param>
         /// <param name="signal"></param>
         /// <param name="data"></param>
         /// <param name="sender"></param>
-        public delegate void SignalEvent(EventType e, string signal, object? data, Model sender);
+        public delegate void SignalEvent<T>(EventType e, string signal, T? data, Signal instance);
 
         /// <summary>
-        /// Signature definition for messages received as data objects
+        /// wraps the typed signal event to allow explicit output of the given type
         /// </summary>
-        /// <param name="e"></param>
-        /// <param name="data">The object received</param>
-        /// <param name="sender"></param>
-        public delegate void DataEvent(EventType e, object? data, Model? sender);
-
-        /// <summary>
-        /// Event called when this messageable instance receives a message event
-        /// </summary>
-        public event MessageEvent? OnReceiveMessage;
-
-        /// <summary>
-        /// Called when the thread begins processing a message
-        /// </summary>
-        public event MessageEvent? OnMessageProcess;
+        /// <typeparam name="T"></typeparam>
+        /// <param name="callback"></param>
+        /// <returns></returns>
+        public static SignalEvent<object> WrapType<T>(SignalEvent<T> callback) where T : class
+        {
+            return (a, b, c, d) =>
+            {
+                callback(a, b, c as T, d); // Safe cast, passes null if the cast fails
+            };
+        }
 
         /// <summary>
         /// Called specifically when the model receives a signal
         /// </summary>
-        public event SignalEvent? OnReceiveSignal;
+        public event SignalEvent<object>? OnReceiveSignal;
 
         /// <summary>
-        /// Called when a data object is received by the model
+        /// Called when the model reads a signal from the queue. Called within the container thread
+        /// that currently holds this model.
         /// </summary>
-        public event DataEvent? OnReceiveData;
+        public event SignalEvent<object>? OnReadSignal;
 
         /// <summary>
         /// The ID value representing the arrival address of this messageable object
@@ -84,7 +74,7 @@ namespace ConnectFour.Messages
         /// this messageable object. It is recommended not to access this queue
         /// except via the internal message accessors.
         /// </summary>
-        private BlockingCollection<Message> Queue = [];
+        private BlockingCollection<Signal> Queue = [];
 
         /// <summary>
         /// The Thread container that will host this model's message loop
@@ -103,8 +93,9 @@ namespace ConnectFour.Messages
             provider.Models.Register(this);
 
             //then create the host and subscribe to its loop/signal
-            Host = provider.ParallelScheme.ProvideHost(this);
-            Host.OnLoop += Host_OnLoop;
+            Host = provider.ParallelScheme?.ProvideHost(this);
+            if (Host == null) throw new Exception("Container was not provided!");
+            Host!.OnLoop += Host_OnLoop;
         }
 
         /// <summary>
@@ -118,32 +109,25 @@ namespace ConnectFour.Messages
             {
                 if (t > m.Expiration) continue;
                 Model sender = m.Sender ?? Parent.Instance!;
-
+                Model receiver = m.Destination ?? Parent.Instance!;
+                string name = m.HeaderName;
                 //we received a message, yay
 
-                try
-                {
-                    //first let's throw the event to process the message
-                    OnMessageProcess?.Invoke(EventType.RECEIVE, m);
-                }
-                catch (Exception e)
-                {
-                    //bonk
-                    Parent.NotifyModelException(this, e);
-                }
 
                 //It wasn't handled yet
                 if (!m.Handled)
                 {
                     //So let's see if there's a signal handler for this header
-
                     var callback = Parent.Router.GetSignalProcessor(m.MessageBody);
                     var data = Parent.Router.GetPacketObject(m.MessageBody);
 
                     if (callback != null)
                     {
                         //try to receive the signal first
-                        try { OnReceiveSignal?.Invoke(EventType.RECEIVE, m.HeaderName, data, sender); }
+                        try
+                        {
+                            OnReadSignal?.Invoke(EventType.RECEIVE, name, data, m);
+                        }
                         catch (Exception e) { Parent.NotifyModelException(this, e); }
 
                         //we invoked the event and it didn't handle the message, so:
@@ -154,30 +138,22 @@ namespace ConnectFour.Messages
                         m.Handled = true;
                     }            
 
-                    //The message wasn't handled yet
-                    if (!m.Handled)
-                    {
-                        //Now let's check if the message was actually a data object
-                        if (data != null)
-                        {
-                            try
-                            {
-                                //just notify that we received the data
-                                OnReceiveData?.Invoke(EventType.RECEIVE, data, sender);
-                            }
-                            catch (Exception e) {
-                                Parent.NotifyModelException(this, e);
-                            }
-                        }
-                    }
-
                     //Now, notify that the message has been processed completely by this pipeline
                     //which provides an opportunity to tell another model that it's been processed
                     m.CompletionCallback?.Invoke(m);
-                    
+                        
                 }
             }
         }
+
+        public void RegisterTypedReader<T>(string signal, SignalEvent<T> callback) where T : class
+        {
+            OnReadSignal += (a, b, c, d) =>
+            {
+                callback(a, b, c as T, d); // Safe cast, passes null if the cast fails
+            };
+        }
+
 
         /// <summary>
         /// Initialize a new messageable with the given string identifier
@@ -201,7 +177,7 @@ namespace ConnectFour.Messages
         /// </summary>
         /// <param name="msTimeout">The timeout, 0 for immediate</param>
         /// <returns>The next message, or null if no messages</returns>
-        public Message? ReadNextMessage(int msTimeout = 0)
+        public Signal? ReadNextMessage(int msTimeout = 0)
         {
             if(Queue.TryTake(out var m, msTimeout))
             {
@@ -221,7 +197,7 @@ namespace ConnectFour.Messages
         /// <param name="result">The resulting message</param>
         /// <param name="msTimeout">A timeout. 0 for immediate</param>
         /// <returns>True if message, false otherwise</returns>
-        public bool TryReadNextMessage(out Message? result, int msTimeout = 0)
+        public bool TryReadNextMessage(out Signal? result, int msTimeout = 0)
         {
             result = ReadNextMessage(msTimeout);
             return result != null;
@@ -233,7 +209,7 @@ namespace ConnectFour.Messages
         /// is being inspected.
         /// </summary>
         /// <param name="m"></param>
-        internal void AddMessageSilent(Message m)
+        internal void AddMessageSilent(Signal m)
         {
             bool flagged = false;
             //enter the lock if we need
@@ -261,7 +237,7 @@ namespace ConnectFour.Messages
 
         /// <summary>
         /// Called when a message is received by the underlying class. Can be
-        /// overridden, but preferentially, subscribe to <see cref="OnReceiveMessage"/>
+        /// overridden, but preferentially, subscribe to <see cref="OnReceiveSignal"/>
         /// </summary>
         /// <param name="m"></param>
         /// <returns>Boolean value representing whether the message was handled. Failure reasons;
@@ -270,7 +246,7 @@ namespace ConnectFour.Messages
         /// <item>The message has already expired</item>
         /// </list>
         /// </returns>
-        public virtual bool ReceiveMessage(Message m)
+        public virtual bool ReceiveMessage(Signal m)
         {
             if (Host?.Paused ?? true) return false;
 
@@ -288,7 +264,7 @@ namespace ConnectFour.Messages
                 //invoke the recipient event
                 try
                 {
-                    OnReceiveMessage?.Invoke(EventType.RECEIVE, m);
+                    OnReceiveSignal?.Invoke(EventType.RECEIVE, m.HeaderName, null, m);
                 }
                 catch(Exception e)
                 {
@@ -310,16 +286,6 @@ namespace ConnectFour.Messages
             }
 
 
-        }
-
-        /// <summary>
-        /// Causes this messageable instance to send a message to the given identifier
-        /// </summary>
-        /// <param name="destination"></param>
-        /// <param name="message"></param>
-        public void SendMessage(Identifier destination, Content message)
-        {
-            Parent.Models.SendMessage(new (Parent.Router, this, destination, message));
         }
 
         /// <summary>

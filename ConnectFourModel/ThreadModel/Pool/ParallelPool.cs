@@ -1,4 +1,4 @@
-﻿using ConnectFour.Messages;
+﻿using ConnectFour.Messaging;
 using ConnectFour.ThreadModel;
 using System;
 using System.Collections.Concurrent;
@@ -82,6 +82,7 @@ namespace ConnectFour.ThreadModel.Pool
                 }
                 //mark that we are live, and start running
                 _live = true;
+                Parent.NotifyThreadStart();
                 while (Running)
                 {
                     //calculate the current goal number of threads
@@ -99,6 +100,7 @@ namespace ConnectFour.ThreadModel.Pool
                 //mark that we aren't live, and uncount the supervisor instance
                 _live = false;
                 Interlocked.Decrement(ref _supervisors);
+                Parent.NotifyThreadEnd();
             }
         }
 
@@ -113,7 +115,7 @@ namespace ConnectFour.ThreadModel.Pool
                 {
                     //terminate if we go over the limit to total thread count
                     if (index > _targetPools) return;
-
+                    Parent.NotifyThreadStart();
                     //now check if we can get thingy
                     if(_queuedUpdates.TryTake(out var update, TimeSpan.FromSeconds(30)))
                     {
@@ -133,6 +135,7 @@ namespace ConnectFour.ThreadModel.Pool
             catch
             {
                 Interlocked.Decrement(ref _pools);
+                Parent.NotifyThreadEnd();
             }
         }
 

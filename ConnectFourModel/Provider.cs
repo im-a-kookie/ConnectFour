@@ -1,5 +1,5 @@
 ﻿using ConnectFour.Attributes;
-using ConnectFour.Messages;
+using ConnectFour.Messaging;
 using ConnectFour.ThreadModel;
 using System;
 using System.Collections.Concurrent;
@@ -77,15 +77,19 @@ namespace ConnectFour
         public Core? Instance = null;
 
         /// <summary>
-        /// The parallel schema for this provider. Follows DI pattern via <see cref="ParallelSchema.ProvideHost(Messages.Model)"/>
+        /// The parallel schema for this provider. Follows DI pattern via <see cref="ParallelSchema.ProvideHost(Messaging.Model)"/>
         /// </summary>
-        public readonly ParallelSchema ParallelScheme;
-        public Provider(ParallelSchema parallel_scheme)
+        public ParallelSchema? ParallelScheme { get; private set; }
+        public Provider()
         {
             Models = new(this);
             Router = new();
             //The 
-            this.ParallelScheme = parallel_scheme; 
+        }
+
+        public void SetParallelSchema(ParallelSchema schema)
+        {
+            this.ParallelScheme = schema;
         }
 
         /// <summary>
@@ -98,7 +102,7 @@ namespace ConnectFour
             lock(this)
             {
                 if (Built) return;
-                Router.RegisterControlSignal(signal, handler);
+                Router.RegisterSignal(signal, handler);
             }
         }
 
@@ -115,7 +119,9 @@ namespace ConnectFour
                 Router.BuildRouter();
 
                 _built = true;
+                _running = true;
                 Instance = new Core(this, Models);
+                
             }
         }
 
@@ -126,7 +132,7 @@ namespace ConnectFour
         public void Shutdown()
         {
             if (!Built) return;
-            Models.SendSignal("exit");
+            Models.SendSignal(signal: "exit", destination: Instance);
             _running = false;
         }
 
@@ -136,7 +142,7 @@ namespace ConnectFour
         /// </summary>
         /// <param name="m"></param>
         /// <param name="e"></param>
-        public void NotifyModelException(Messages.Model m, Exception e)
+        public void NotifyModelException(Messaging.Model m, Exception e)
         {
             //TODO fill body, log error
         }
@@ -174,7 +180,7 @@ namespace ConnectFour
         /// Notifies the provider that a thread was started
         /// </summary>
         /// <param name="container"></param>
-        internal void NotifyThreadStart(ModelContainer container)
+        internal void NotifyThreadStart()
         {
             Interlocked.Increment(ref _liveThreads);
             _ActiveThreads.TryAdd(Thread.CurrentThread, true);
@@ -184,9 +190,9 @@ namespace ConnectFour
         /// Notifies the provider that a thread was ended
         /// </summary>
         /// <param name="container"></param>
-        internal void NotifyThreadEnd(ModelContainer container)
+        internal void NotifyThreadEnd()
         {
-            Interlocked.Decrement(ref _liveThreads);
+            if (Interlocked.Decrement(ref _liveThreads) == 0) _running = false;
             _ActiveThreads.TryRemove(Thread.CurrentThread, out _);
         }
 

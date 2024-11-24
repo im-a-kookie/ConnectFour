@@ -11,9 +11,9 @@ namespace ConnectFour.Messaging
     public class Router
     {
 
-        public delegate void SignalProcessor(Router router, Signal s);
+        public delegate void SignalProcessor(Router router, Model? m, Signal s);
 
-        public delegate void TypedSignalProcessor<T>(Router router, Signal s, T? data);
+        public delegate void TypedSignalProcessor<T>(Router router, Model? m, Signal s, T? data);
 
 
 
@@ -119,17 +119,17 @@ namespace ConnectFour.Messaging
                 if (UsesDefaultControlSignals) return;
 
                 //register the null message signal
-                RegisterSignal("_null", (router, signal) => { });
+                RegisterSignal("_null", (router, model, signal) => { });
 
                 //register basic control signals
-                RegisterSignal("exit", (router, signal) =>
+                RegisterSignal("exit", (router, model, signal) =>
                 {
-                    signal.Destination.Host?.Kill();
+                    model.Host?.Kill();
                 });
 
-                RegisterSignal("suspend", (router, signal) =>
+                RegisterSignal("suspend", (router, model, signal) =>
                 {
-                    signal.Destination.Host?.Pause();
+                    model.Host?.Pause();
                 });
 
                 UsesDefaultControlSignals = true;
@@ -333,7 +333,7 @@ namespace ConnectFour.Messaging
             //now we can do a thing
             if (callback is SignalProcessor sp)
             {
-                sp(this, m);
+                sp(this, m.Destination, m);
                 m.Handled = true;
             }
             else
@@ -343,7 +343,7 @@ namespace ConnectFour.Messaging
                 {
                     var callbackType = callback!.GetType().GetGenericArguments()[0];
                     if (callbackType.IsAssignableFrom(data!.GetType()))
-                        callback.DynamicInvoke(this, m, data);
+                        callback.DynamicInvoke(this, m.Destination, m, data);
                     m.Handled = true;
                 }
             }

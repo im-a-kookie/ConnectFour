@@ -9,6 +9,9 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using System.Reflection.PortableExecutable;
+using static ConnectFour.Messaging.Router;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using static ConnectFour.Messaging.Model;
 
 namespace ConnectFour.Messaging
 {
@@ -43,7 +46,7 @@ namespace ConnectFour.Messaging
         /// <typeparam name="T"></typeparam>
         /// <param name="callback"></param>
         /// <returns></returns>
-        public static SignalEvent<object> WrapType<T>(SignalEvent<T> callback) where T : class
+        public static SignalEvent<object> WrapDelegate<T>(SignalEvent<T> callback) where T : class
         {
             return (a, b, c, d) =>
             {
@@ -61,6 +64,11 @@ namespace ConnectFour.Messaging
         /// that currently holds this model.
         /// </summary>
         public event SignalEvent<object>? OnReadSignal;
+
+        /// <summary>
+        /// The loop action called when this thing does things
+        /// </summary>
+        public event Action? Loop;
 
         /// <summary>
         /// The ID value representing the arrival address of this messageable object
@@ -95,17 +103,34 @@ namespace ConnectFour.Messaging
             //then create the host and subscribe to its loop/signal
             Host = provider.ParallelScheme?.ProvideHost(this);
             if (Host == null) throw new Exception("Container was not provided!");
-            Host!.OnLoop += Host_OnLoop;
+
+            //now set up the message loop observers
+            Host.OnLoop += (x) => Loop?.Invoke();
+            Loop += Host_OnLoop;
+        }
+
+        /// <summary>
+        /// Sets the update rate of this model to the targeted number of iterations per second
+        /// </summary>
+        /// <param name="rate"></param>
+        public void SetUpdateRate(double rate)
+        {
+            Host?.SetUpdateRate(rate);
+        }
+
+        public void OnLoop()
+        {
+            Loop?.Invoke();
         }
 
         /// <summary>
         /// Default entry point that receives the host signals. This method should generally not block.
         /// If the model wants to pause, consider <see cref="ManualResetEvent"/> with immediate timeout.
         /// </summary>
-        private void Host_OnLoop(ModelContainer container)
+        private void Host_OnLoop()
         {
             DateTime t = DateTime.UtcNow;
-            while (Queue.TryTake(out var m, -1))
+            while (Queue.TryTake(out var m))
             {
                 if (t > m.Expiration) continue;
                 Model sender = m.Sender ?? Parent.Instance!;
@@ -119,28 +144,39 @@ namespace ConnectFour.Messaging
                 {
                     //So let's see if there's a signal handler for this header
                     var callback = Parent.Router.GetSignalProcessor(m.MessageBody);
-                    var data = Parent.Router.GetPacketObject(m.MessageBody);
+                    var data = m.UnpackData();
 
-                    if (callback != null)
+                    //check all of the method handlers
+                    foreach (var n in OnReadSignal?.GetInvocationList() ?? [])
                     {
-                        //try to receive the signal first
                         try
                         {
-                            OnReadSignal?.Invoke(EventType.RECEIVE, name, data, m);
+                            //retrieve the callback type and ensure that it can be used for this invocation
+                            var ct = callback!.GetType().GetGenericArguments().FirstOrDefault();
+                            if (ct == null || ct.IsAssignableFrom(data?.GetType()))
+                                n.DynamicInvoke(EventType.RECEIVE, name, data, m);
+                            if (m.Handled) break;
                         }
-                        catch (Exception e) { Parent.NotifyModelException(this, e); }
+                        catch (Exception e)
+                        {
+                            Parent.NotifyModelException(this, e);
+                        }
+                    }
 
-                        //we invoked the event and it didn't handle the message, so:
-                        try { if (!m.Handled) callback(this, m.MessageBody.header, data); }
-                        catch (Exception e) { Parent.NotifyModelException(this, e); }
-
-                        //the message has now been handled by the signal processor
-                        m.Handled = true;
-                    }            
+                    //now use the default callback
+                    if (!m.Handled && callback != null)
+                    {
+                        Parent.Router.InvokeProcessorDynamic(callback, m, data);
+                    }
+ 
+                    if(!m.Handled)
+                    {
+                        Parent.NotifyModelException(this, new Exception("The message was not handled..."));
+                    }
 
                     //Now, notify that the message has been processed completely by this pipeline
                     //which provides an opportunity to tell another model that it's been processed
-                    m.CompletionCallback?.Invoke(m);
+                    m.CompletionCallback?.Complete(m);
                         
                 }
             }
@@ -259,7 +295,6 @@ namespace ConnectFour.Messaging
                 //don't queue expired messages
                 //TODO discarded messages should be logged
                 if (m.Expiration < DateTime.UtcNow) return false;
-                Host?.NotifyWork();
 
                 //invoke the recipient event
                 try
@@ -275,6 +310,7 @@ namespace ConnectFour.Messaging
                 if (!m.Handled)
                 {
                     Queue.Add(m);
+                    Host?.NotifyWork();
                 }
                 //it was handled correctly
                 return true;

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using ConnectFour.Configuration;
 using System.Runtime.CompilerServices;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ConnectFour.Messaging
 {
@@ -57,7 +58,7 @@ namespace ConnectFour.Messaging
         /// <summary>
         /// Mask for stripping <see cref="TYPEFLAG"/>
         /// </summary>
-        const int TYPEMASK = 0x7FFF;
+        public const int TYPEMASK = 0x7FFF;
 
         private bool _built = false;
 
@@ -168,7 +169,7 @@ namespace ConnectFour.Messaging
                     RegisterTypePackers(BitConverter.GetBytes, BitConverter.ToSingle);
 
                 if (!_encoderIndexMap.ContainsKey(typeof(double)))
-                    RegisterTypePackers(BitConverter.GetBytes, BitConverter.ToSingle);
+                    RegisterTypePackers(BitConverter.GetBytes, BitConverter.ToDouble);
 
                 if (!_encoderIndexMap.ContainsKey(typeof(short))) 
                     RegisterTypePackers( BitConverter.GetBytes, BitConverter.ToInt16);
@@ -265,26 +266,38 @@ namespace ConnectFour.Messaging
         /// <param name="signal"></param>
         /// <param name="data"></param>
         /// <returns></returns>
-        public Content BuildSignalContent(string signal, object? data = null)
+        public Content<T>? BuildSignalContent<T>(string signal, T? data = default)
         {
             //1. Get the signal
             if (_nameIndexMap.TryGetValue(signal, out var index))
             {
                 if (data == null)
                 {
-                    return new EmptyContent((ushort)index);
+                    return null;
                 }
                 else
                 {
                     Type baseType = typeof(Content<>);
-                    var type = baseType.MakeGenericType(data.GetType());
+                    var type = baseType.MakeGenericType(typeof(T));
                     Content result = (Content)Activator.CreateInstance(type, data)!;
                     result.header = (ushort)index;
-                    return result;
+                    return result as Content<T>;
                 }
             }
             //bonk
             else throw RoutingException.UnknownSignal(this, signal);
+        }
+
+
+        /// <summary>
+        /// Builds the content for a signal
+        /// </summary>
+        /// <param name="signal"></param>
+        /// <param name="data"></param>
+        /// <returns></returns>
+        public Content BuildSignalContent(string signal, object? data = null)
+        {
+            return BuildSignalContent<object>(signal, data);
         }
 
 
@@ -308,6 +321,35 @@ namespace ConnectFour.Messaging
                 return null;
             }
         }
+
+        /// <summary>
+        /// Dynamically invokes the given callback delegate as either <see cref="SignalProcessor"/> or <see cref="TypedSignalProcessor{T}"/>
+        /// </summary>
+        /// <param name="callback"></param>
+        /// <param name="m"></param>
+        /// <param name="data"></param>
+        public void InvokeProcessorDynamic(Delegate callback, Signal m, object? data)
+        {
+            //now we can do a thing
+            if (callback is SignalProcessor sp)
+            {
+                sp(this, m);
+                m.Handled = true;
+            }
+            else
+            {
+                var gt = callback!.GetType().GetGenericTypeDefinition();
+                if (gt == typeof(TypedSignalProcessor<>))
+                {
+                    var callbackType = callback!.GetType().GetGenericArguments()[0];
+                    if (callbackType.IsAssignableFrom(data!.GetType()))
+                        callback.DynamicInvoke(this, m, data);
+                    m.Handled = true;
+                }
+            }
+        }
+
+
 
         /// <summary>
         /// Gets the string name of the header for this content
@@ -361,6 +403,18 @@ namespace ConnectFour.Messaging
         }
 
         /// <summary>
+        /// Registers an encoder that maps the given input type to itself as the intended output type
+        /// </summary>
+        /// <typeparam name="I"></typeparam>
+        /// <typeparam name="O"></typeparam>
+        /// <param name="encoder"></param>
+        /// <exception cref="InvalidOperationException"></exception>
+        public void RegisterTypeEncoder<T>(PacketEncoder<T, T>.Encoder encoder)
+        {
+            RegisterTypeEncoder<T, T>(encoder);
+        }
+
+        /// <summary>
         /// Register a decoder that decodes data into the given output type
         /// </summary>
         /// <typeparam name="O"></typeparam>
@@ -392,8 +446,6 @@ namespace ConnectFour.Messaging
             RegisterTypePackers<T, T>(encoder, decoder);
         }
 
-
-        
         /// <summary>
         /// Register a type packer that does not require type to be specified in the decoder callback
         /// </summary>
@@ -477,7 +529,7 @@ namespace ConnectFour.Messaging
 
                     //now box it all up and send it back
                     Content<PackedData> result = new Content<PackedData>(pd);
-                    result.header = (ushort)(content.header & TYPEFLAG); //keep the header, typeflag it
+                    result.header = (ushort)(content.header | TYPEFLAG); //keep the header, typeflag it
                     return result;
                 }
                 catch (Exception ex)

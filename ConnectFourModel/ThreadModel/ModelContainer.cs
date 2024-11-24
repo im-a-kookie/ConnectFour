@@ -84,9 +84,10 @@ namespace ConnectFour.ThreadModel
         /// </summary>
         internal ManualResetEvent Gate = new(true);
 
-
+        /// <summary>
+        /// The child model for this container
+        /// </summary>
         public readonly Model Child;
-
 
         public ModelContainer(Model child, Provider parent, ParallelSchema host)
         {
@@ -95,6 +96,17 @@ namespace ConnectFour.ThreadModel
             this.Child = child;
         }
 
+        /// <summary>
+        /// Configures the update rate of this model to the given number of iterations.
+        /// 
+        /// <para>Setting the rate to 0 (default), will cause the model to tick only when messages are received</para>
+        /// per second
+        /// </summary>
+        /// <param name="rate"></param>
+        public virtual void SetUpdateRate(double rate)
+        {
+            MinimumLoopTime = TimeSpan.FromMilliseconds(1000d / rate);
+        }
 
         /// <summary>
         /// Submits a running time to be tracked into the running average performance counter.

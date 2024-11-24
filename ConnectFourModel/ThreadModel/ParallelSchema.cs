@@ -50,15 +50,20 @@ namespace ConnectFour.ThreadModel
         /// <summary>
         /// The parent provider instance for this schema
         /// </summary>
-        public Provider Parent { get; private set; }
+        public Provider? Parent { get; private set; }
 
         /// <summary>
         /// Base constructor of parallel schema.
         /// </summary>
         /// <param name="parent"></param>
-        public ParallelSchema(Provider parent)
+        public ParallelSchema()
         {
-            this.Parent = parent;
+            
+        }
+
+        internal void SetParent(Provider p)
+        {
+            Parent = p;
         }
 
         /// <summary>

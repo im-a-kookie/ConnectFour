@@ -18,7 +18,7 @@ namespace ConnectFour.ThreadModel.PerModel
     public class ParallelThreadPerModel : ParallelSchema
     {
 
-        public ParallelThreadPerModel(Provider parent) : base(parent)
+        public ParallelThreadPerModel() : base()
         {
         }
 

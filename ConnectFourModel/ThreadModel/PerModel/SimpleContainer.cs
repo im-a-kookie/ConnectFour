@@ -50,6 +50,11 @@ namespace ConnectFour.ThreadModel.PerModel
         public override void NotifyWork()
         {
             //does not need to do anything for this implementation
+            try
+            {
+                _containedThread?.Interrupt();
+            }
+            catch { }
         }
 
         /// <summary>
@@ -139,52 +144,61 @@ namespace ConnectFour.ThreadModel.PerModel
                 //as long as we're running, do the stuff
                 while (_running && Parent.Running)
                 {
-                    timer.Restart();
-
-                    // Wait for signal to proceed
-                    //if the queue contains a large number of messages, then the timeout is 
-                    //increased
-                    int waitScaledTime = Child.TotalMessages * Child.TotalMessages;
-                    if (Gate.WaitOne(TimeSpan.FromMilliseconds(30000)))
+                    try
                     {
-                        CallOnLoop();
-                    }
-                    else
-                    {
-                        try
+                        timer.Restart();
+                        // Wait for signal to proceed
+                        //if the queue contains a large number of messages, then the timeout is 
+                        //increased
+                        int waitScaledTime = Child.TotalMessages * Child.TotalMessages;
+                        if (Gate.WaitOne(-1))
                         {
-                            //enter the queuelock in write mode, which prevents the queue
-                            //from being accessed by the add-message approach
-                            Child.QueueLock.EnterWriteLock();
-                            //take all messages and strip old messages
-                            var timeNow = DateTime.UtcNow;
-                            int n = Child.TotalMessages;
-                            for(int i = 0; i < n; i++)
+                            CallOnLoop();
+                        }
+                        else if (!Gate.WaitOne(30000))
+                        {
+                            try
                             {
-                                Child.TryReadNextMessage(out var m, 0);
-                                if (m != null && m.Expiration > timeNow)
+                                //enter the queuelock in write mode, which prevents the queue
+                                //from being accessed by the add-message approach
+                                Child.QueueLock.EnterWriteLock();
+                                //take all messages and strip old messages
+                                var timeNow = DateTime.UtcNow;
+                                int n = Child.TotalMessages;
+                                for (int i = 0; i < n; i++)
                                 {
-                                    Child.AddMessageSilent(m);
+                                    Child.TryReadNextMessage(out var m, 0);
+                                    if (m != null && m.Expiration > timeNow)
+                                    {
+                                        Child.AddMessageSilent(m);
+                                    }
                                 }
                             }
+                            catch (Exception e)
+                            {
+                                Parent.NotifyHostException(this, e);
+                            }
+                            finally
+                            {
+                                Child.QueueLock.EnterWriteLock();
+                            }
                         }
-                        catch(Exception e)
+
+                        // Adjust delay to maintain loop timing
+                        double delay = MinimumLoopTime.TotalMilliseconds - timer.ElapsedMilliseconds;
+                        if (_running && delay > 1)
                         {
-                            Parent.NotifyHostException(this, e);
+                            Thread.Sleep((int)delay);
                         }
-                        finally
+                        else if (_running && MinimumLoopTime.TotalMicroseconds < 1)
                         {
-                            Child.QueueLock.EnterWriteLock();
+                            Thread.Sleep(-1);
                         }
                     }
-
-                    // Adjust delay to maintain loop timing
-                    double delay = MinimumLoopTime.TotalMilliseconds - timer.ElapsedMilliseconds;
-                    if (_running && delay > 1)
+                    catch (ThreadInterruptedException e)
                     {
-                        Thread.Sleep((int)delay);
+                        //bonk?
                     }
-
                     // Update average performance
                     double averageRate = Math.Max(1, _averagePerformance.TotalMilliseconds);
                     //estimate the number of times that we've iterated
@@ -195,10 +209,6 @@ namespace ConnectFour.ThreadModel.PerModel
                     totalRate /= (estIterations + 1);
                     _averagePerformance = TimeSpan.FromMilliseconds(totalRate);
                 }
-            }
-            catch (ThreadInterruptedException)
-            {
-                // Handle thread interruption gracefully
             }
             catch (Exception ex)
             {

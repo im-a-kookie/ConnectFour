@@ -46,9 +46,26 @@ namespace ConnectFour.Messaging
         /// </summary>
         /// <param name="message"></param>
         /// <returns>True if the destination was valid, otherwise false</returns>
-        public bool SendMessage(Signal message)
+        public bool SendSignal(Signal message)
         {
             return message.Destination.ReceiveMessage(message);
+        }
+
+
+        /// <summary>
+        /// Attempts to send a message within the system. Sends the message to the host context
+        /// if no destination is specified
+        /// </summary>
+        /// <param name="sender">The message sender. Defaults to the host if null</param>
+        /// <param name="destination">The destination. Defaults to the host if null</param>
+        /// <param name="message">The body of the message</param>
+        /// <returns>True if the destination was valid, otherwise false</returns>
+        public bool SendSignal(Content packet, Model? destination = null, Model? sender = null)
+        {
+            //default 
+            if (destination == null) destination = Parent.Instance!;
+            if (sender == null) sender = Parent.Instance!;
+            return SendSignal(new Signal(Parent.Router, sender, destination, packet));
         }
 
         /// <summary>
@@ -60,11 +77,11 @@ namespace ConnectFour.Messaging
         /// <param name="signal">The signal</param>
         /// <param name="destination">The destination</param>
         /// <returns></returns>
-        public bool SendSignal(string signal, object? data = null, Model? destination = null, Model? sender = null)
+        public bool SendSignal<T>(string signal, T? data = default, Model? destination = null, Model? sender = null)
         {
 
-            return SendMessage(
-                packet: Parent.Router.PackSignal(signal),
+            return SendSignal(
+                packet: Parent.Router.BuildSignalContent(signal, data),
                 destination: destination,
                 sender: sender);
         }
@@ -78,56 +95,10 @@ namespace ConnectFour.Messaging
         /// <param name="signal">The signal</param>
         /// <param name="destination">The destination</param>
         /// <returns></returns>
-        public bool SendSignal(string signal, Identifier? destination = null, Model? sender = null, object? data = null)
+        public bool SendSignal(string signal, object? data = default, Model? destination = null, Model? sender = null)
         {
-            Model? dest = null;
-            if (destination == null) dest = Parent.Instance;
-            else Parent.Models.models.TryGetValue(destination.GetRaw(), out dest);
-            return SendSignal(signal, data, dest, sender);
+            return SendSignal<object>(signal, data, destination, sender);
         }
-
-        /// <summary>
-        /// Sends a signal using a typed data object
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="signal"></param>
-        /// <param name="data"></param>
-        /// <param name="destination"></param>
-        /// <param name="sender"></param>
-        /// <returns></returns>
-        public bool SendSignal<T>(string signal, T? data, Model? destination = null, Model? sender = null) where T: notnull
-        {
-            try
-            {
-                return SendMessage(
-                        packet: Parent.Router.PackSignal<T>(signal, data),
-                        destination: destination,
-                        sender: sender);
-            }
-            catch
-            {
-                //this is probably fine
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Sends signal using a typed data object
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="signal"></param>
-        /// <param name="data"></param>
-        /// <param name="destination"></param>
-        /// <param name="sender"></param>
-        /// <returns></returns>
-        public bool SendSignal<T>(string signal, T? data, Identifier? destination = null, Model? sender = null) where T : notnull
-        {
-            Model? dest = null;
-            if (destination == null) dest = Parent.Instance;
-            else Parent.Models.models.TryGetValue(destination.GetRaw(), out dest);
-            return SendSignal<T>(signal, data, dest, sender);
-        }
-
 
         /// <summary>
         /// Attempts to send a message within the system. Sends the message to the host context
@@ -137,12 +108,74 @@ namespace ConnectFour.Messaging
         /// <param name="destination">The destination. Defaults to the host if null</param>
         /// <param name="message">The body of the message</param>
         /// <returns>True if the destination was valid, otherwise false</returns>
-        public bool SendMessage(Content packet, Model? destination = null, Model? sender = null)
+        public Task<T?> AwaitSignal<T>(Content packet, Model? destination = null, Model? sender = null)
         {
-            //default 
-            if (destination == null) destination = Parent.Instance!;
-            if (sender == null) sender = Parent.Instance!;
-            return SendMessage(new Signal(Parent.Router, sender, destination, packet));
+            //TPL
+            return Task.Run(() =>
+            {
+                //default sender/destination
+                if (destination == null) destination = Parent.Instance!;
+                if (sender == null) sender = Parent.Instance!;
+
+                //The blocking completor allows us to await its completion
+                Signal s = new Signal(Parent.Router, sender, destination, packet);
+                s.CompletionCallback = new BlockingCompleter();
+                SendSignal(s);
+
+                //so now we can wait for it to be done
+                s.CompletionCallback.Await();
+                //and reply correctly
+                return s.CompletionCallback.GetResponse<T>();
+
+            });
+        }
+
+
+        /// <summary>
+        /// Awaitable signal sending
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="signal"></param>
+        /// <param name="data"></param>
+        /// <param name="destination"></param>
+        /// <param name="sender"></param>
+        /// <returns></returns>
+        public Task<OUT?> AwaitSignal<IN, OUT>(string signal, IN? data, Model? destination = null, Model? sender = null) where IN: notnull
+        {
+            return AwaitSignal<OUT>(
+                packet: Parent.Router.BuildSignalContent(signal, data),
+                destination: destination,
+                sender: sender);
+            //send it off with an action delegate
+        }
+
+
+        /// <summary>
+        /// Send a signal and provide an awaitable task
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="signal"></param>
+        /// <param name="data"></param>
+        /// <param name="destination"></param>
+        /// <param name="sender"></param>
+        /// <returns></returns>
+        public Task<T?> AwaitSignal<T>(string signal, object? data, Model? destination = null, Model? sender = null)
+        {
+            return AwaitSignal<object, T>(signal, data, destination, sender);
+        }
+
+        /// <summary>
+        /// Send a signal and provide an awaitable task
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="signal"></param>
+        /// <param name="data"></param>
+        /// <param name="destination"></param>
+        /// <param name="sender"></param>
+        /// <returns></returns>
+        public Task AwaitSignal(string signal, object? data, Model? destination = null, Model? sender = null)
+        {
+            return AwaitSignal<object>(signal, data, destination, sender);
         }
 
     }

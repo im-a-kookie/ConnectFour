@@ -69,6 +69,7 @@ namespace ConnectFour.Messaging.Packets
         public Content(T data)
         {
             _data = data;
+            datatype = data.GetType();
         }
 
         //generally content is just a container for the data object

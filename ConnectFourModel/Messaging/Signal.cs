@@ -22,7 +22,7 @@ namespace ConnectFour.Messaging
         /// <summary>
         /// The destination identifier for the message
         /// </summary>
-        public Model Destination;
+        public Model? Destination;
 
         /// <summary>
         /// The string body of the message
@@ -40,11 +40,14 @@ namespace ConnectFour.Messaging
         public DateTime Expiration = DateTime.MaxValue;
 
         /// <summary>
-        /// A callback provided to the message that can be handled
-        /// after the message is completed
+        /// The completion callback that allows the response to be read
         /// </summary>
-        public Action<Signal>? CompletionCallback;
+        public Completer? CompletionCallback = null;
 
+        /// <summary>
+        /// The response content
+        /// </summary>
+        public Content? Response = null;
 
         /// <summary>
         /// Create a message with the given sender/receiver and content
@@ -60,19 +63,27 @@ namespace ConnectFour.Messaging
             this.MessageBody = message;
         }
 
+        public Signal(Router registry, Content message)
+        {
+            this.Registry = registry;
+            this.MessageBody = message;
+        }
+
         /// <summary>
         /// Gets the name of the header in this message
         /// </summary>
         public string HeaderName => Registry.GetHeaderName(MessageBody);
 
 
+
+
         public object? UnpackData()
         {
-            if(MessageBody is Content<PackedData> data)
+            if (MessageBody is Content<PackedData> data)
             {
                 return Registry.UnpackContent(data);
             }
-            return null;
+            else return MessageBody.GetData();
         }
 
         public T? UnpackData<T>()
@@ -81,6 +92,12 @@ namespace ConnectFour.Messaging
             {
                 return Registry.UnpackContent<T>(data);
             }
+            else
+            {
+                var result = MessageBody.GetData();
+                if (result is T t) return t;
+            }
+
             return default;
         }
 

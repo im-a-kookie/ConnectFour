@@ -15,7 +15,7 @@ namespace ConnectFour.ThreadModel.Pool
     /// This involves one supervisor thread, which controls the number of tasks that are running at
     /// any given time.
     /// </summary>
-    internal class ParallelPool : ParallelSchema
+    public class ParallelPool : ParallelSchema
     {
 
         bool _live = false;
@@ -35,7 +35,7 @@ namespace ConnectFour.ThreadModel.Pool
         /// </summary>
         private AutoResetEvent gate = new AutoResetEvent(false);
 
-        public ParallelPool(Provider parent, int targetPools = -1, int targetDensity = 1) : base(parent)
+        public ParallelPool(int targetPools = -1, int targetDensity = 1) : base()
         {
             _targetPools = targetPools;
             if (_targetPools <= 0) _targetPools = Environment.ProcessorCount;
@@ -126,8 +126,25 @@ namespace ConnectFour.ThreadModel.Pool
                         //4. All work in the update is dequeued
                         Interlocked.Decrement(ref update._counter);
                         Interlocked.MemoryBarrierProcessWide();
+
+                        //now we need to handle async await logic on the container
+                        //so that the container will sleep until its time is up
+                        //and then relog when it's ready to be updated again
+
                         //we have an update to do
                         update.CallOnLoop();
+
+                        //fire up a re-updater for whenever
+                        if(update.MinimumLoopTime.TotalMilliseconds >= 1)
+                        {
+                            Task.Run(() =>
+                            {
+                                Thread.Sleep(update.MinimumLoopTime);
+                                Queue(update);
+                            });
+                        }
+
+
                     }
                 }
 

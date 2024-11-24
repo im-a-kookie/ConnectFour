@@ -1,5 +1,4 @@
-﻿using ConnectFour.Attributes;
-using ConnectFour.Messaging;
+﻿using ConnectFour.Messaging;
 using ConnectFour.ThreadModel;
 using System;
 using System.Collections.Concurrent;
@@ -14,7 +13,6 @@ using static ConnectFour.Core;
 
 namespace ConnectFour
 {
-    [Finalizable]
     public class Provider
     {
         public enum EventFlags
@@ -80,8 +78,10 @@ namespace ConnectFour
         /// The parallel schema for this provider. Follows DI pattern via <see cref="ParallelSchema.ProvideHost(Messaging.Model)"/>
         /// </summary>
         public ParallelSchema? ParallelScheme { get; private set; }
-        public Provider()
+        public Provider(ParallelSchema schema)
         {
+            ParallelScheme = schema;
+            schema.SetParent(this);
             Models = new(this);
             Router = new();
             //The 

@@ -1,4 +1,5 @@
-﻿using ConnectFour.Messaging;
+﻿using ConnectFour.Discovery;
+using ConnectFour.Messaging;
 using ConnectFour.Messaging.Packets;
 using System;
 using System.Reflection;
@@ -9,6 +10,31 @@ namespace Tests.Routing
     [TestClass]
     public class RouterTests
     {
+
+        public class Tester
+        {
+
+            public static List<string> results = [];
+
+            public Tester()
+            {
+                results = [];
+            }
+
+            [SignalDefinition]
+            public static void Brog(Signal s, Router r, Model m)
+            {
+                results.Add(s.HeaderName);
+            }
+
+            [SignalDefinition(signalName: "scrub")]
+            public void Splib(Signal s)
+            {
+                results.Add(s.HeaderName);
+            }
+        }
+
+
         /// <summary>
         /// A simple data template class for sending things
         /// </summary>
@@ -24,28 +50,31 @@ namespace Tests.Routing
 
         Router? router;
 
+        Creator? creator;
+
+
         [TestInitialize]
         public void Init()
         {
             router = new Router();
             string_collector = [];
 
-            router.RegisterSignal("untyped", (a, b) => {
-                string_collector.Add(b.HeaderName);
-                int_collector.Add((int)b.MessageBody.GetData()!);
+            router.RegisterSignal("untyped", (router, model, signal) => {
+                string_collector.Add(signal.HeaderName);
+                int_collector.Add((int)signal.MessageBody.GetData()!);
             }
             );
 
-            router.RegisterSignal<int>("typed", (a, b, c) =>
+            router.RegisterSignal<int>("typed", (router, model, signal, data) =>
             {
-                string_collector.Add(b.HeaderName);
-                int_collector.Add(c);
+                string_collector.Add(signal.HeaderName);
+                int_collector.Add(data);
             });
 
-            router.RegisterSignal<Cookie>("cookie", (a, b, c) =>
+            router.RegisterSignal<Cookie>("cookie", (router, model, signal, data) =>
             {
-                string_collector.Add(b.HeaderName);
-                int_collector.Add(c?.data ?? -1);
+                string_collector.Add(signal.HeaderName);
+                int_collector.Add(data?.data ?? -1);
             });
 
             //create a cookie encoder
@@ -55,7 +84,17 @@ namespace Tests.Routing
             router.RegisterTypeDecoder((Type t, byte[] data) => new Cookie(BitConverter.ToInt32(data)));
 
 
+            //set up a creator also
+            creator = new Creator();
+            var t = new Tester();
+            creator.DiscoverFromInstance(t);
+            creator.RegisterCalls(router);
+            
+
+
+
         }
+
 
         /// <summary>
         /// Test that content can be created, and that the headers and data values
@@ -122,6 +161,7 @@ namespace Tests.Routing
         {
             int n = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
             var c = router?.BuildSignalContent("untyped", n);
+
             var sp = router?.GetSignalProcessor(c);
             router.InvokeProcessorDynamic(sp, new Signal(router!, c!), c.GetData());
 
@@ -154,6 +194,26 @@ namespace Tests.Routing
             Assert.IsInstanceOfType(unpacked, typeof(Cookie));
             Assert.AreEqual(unpacked.data, n);
 
+
+        }
+
+        [TestMethod()]
+        public void TestDiscoveryCreator()
+        {
+            int n = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
+            var c = router?.BuildSignalContent("Brog", n);
+            Assert.IsNotNull(c);
+            var s = new Signal(router!, c!);
+            creator!.Call("Brog", router!, null, s, c.GetData());
+            Assert.AreEqual(Tester.results[0], "Brog");
+
+
+            n = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
+            c = router?.BuildSignalContent("scrub", n);
+            Assert.IsNotNull(c);
+            s = new Signal(router!, c!);
+            creator!.Call("scrub", router!, null, s, c.GetData());
+            Assert.AreEqual(Tester.results[1], "scrub");
 
         }
 

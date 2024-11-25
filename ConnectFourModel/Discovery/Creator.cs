@@ -1,12 +1,19 @@
 ﻿using ConnectFour.Messaging;
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
+using System.Dynamic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using System.Text;
 using System.Threading.Tasks;
+using static ConnectFour.Discovery.Emitter;
+using static System.Collections.Specialized.BitVector32;
 
 namespace ConnectFour.Discovery
 {
@@ -16,7 +23,7 @@ namespace ConnectFour.Discovery
     /// <para>A Creator is instantiated and fed instances via <see cref="DiscoverFromInstance(object)"/>. This detects
     /// all static and instance <see cref="SignalDefinition"/> methods.
     /// </para><para>
-    /// Static methods are invoked statically, and instance methods retain a <see cref="WeakReference{T}"/> of the provided object.
+    /// Static methods are invoked statically, and instance methods retain a live reference to the instanced object.
     /// These are then mapped to the Router via <see cref="RegisterCalls(Router)"/>, which invokes them dynamically.
     /// </para>
     /// 
@@ -32,7 +39,20 @@ namespace ConnectFour.Discovery
     public class Creator
     {
 
-        Dictionary<string, (WeakReference<object>? caller, MethodInfo callback, (int input, int output)[] mapping)> _callMaps = [];
+        /// <summary>
+        /// Internal mapping of callers to string names for the signals
+        /// </summary>
+        Dictionary<string, Caller> _callbackMapping = new Dictionary<string, Caller>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Generates a new list of parameters that can be explicitly defined
+        /// </summary>
+        public List<Type> ExplicitParameters => new List<Type> { typeof(Router), typeof(Model), typeof(Signal) };
+
+        /// <summary>
+        /// Gets a new list of types that MUST be defined in the signature
+        /// </summary>
+        public List<Type> MandatoryParameters = new List<Type> { typeof(Signal) };
 
         /// <summary>
         /// Creates an array describing the parameter mapping from the expected callback signature 
@@ -51,12 +71,11 @@ namespace ConnectFour.Discovery
             // Retrieve and validate method parameters
             var parameters = d.GetParameters();
             if (parameters.Length < 1 || parameters.Length > 4)
-                throw new ArgumentException($"The provided method '{d.Name}' does not have a compatible signature. It must have between 1 and 4 parameters, including a Signal parameter.");
+                throw new ArgumentException($"The provided method '{d.Name}' must have between 1 and 4 parameters, including a Signal parameter.");
 
             // Define the expected parameter types
-            var requiredParams = new List<Type> { typeof(Router), typeof(Model), typeof(Signal), typeof(object) };
+            var requiredParams = ExplicitParameters;
             var outputParams = parameters.Select(p => p.ParameterType).ToList<Type?>();
-
             var parameterMappings = new Dictionary<int, int>();
 
             // Map required parameters to method parameters
@@ -70,131 +89,116 @@ namespace ConnectFour.Discovery
                 }
             }
 
+            // Find a final parameter (likely data) that isn't a Signal, Model, or Router
+            for (int i = 0; i < outputParams.Count; ++i)
+            {
+                if (outputParams[i] == null) continue;
+                if (requiredParams.FindIndex(x => x.IsAssignableFrom(outputParams[i])) < 0)
+                {
+                    parameterMappings.TryAdd(requiredParams.Count, i);
+                    break;
+                }
+            }
+
+            // Remove empty entries
+            outputParams.RemoveAll(x => x == null);
+
             // Verify all required parameters are mapped
             var unmappedRequiredParams = requiredParams
                 .Where((_, i) => !parameterMappings.ContainsKey(i))
                 .ToList();
 
-            //we must have a signal
-            if (unmappedRequiredParams.Contains(typeof(Signal)))
-                throw new ArgumentException($"The provided method '{d.Name}' does not include a parameter assignable to 'Signal'.");
-            //and we must map every parameter
+            // Ensure a Signal is included
+            foreach (var mandatory in MandatoryParameters)
+            {
+                if (unmappedRequiredParams.Contains(mandatory))
+                    throw new ArgumentException($"The provided method '{d.Name}' does not include a parameter assignable to 'Signal'.");
+            }
+
+            // Ensure all parameters are mapped
             if (parameterMappings.Count != parameters.Length)
                 throw new ArgumentException($"The provided method '{d.Name}' contains parameters that cannot be mapped to the expected signature.");
 
-            //Build the result array from the mappings
-            var result = parameterMappings
+            // Build and return the result array from the mappings
+            return parameterMappings
                 .Select(kvp => (input: kvp.Key, output: kvp.Value))
-                //.OrderBy(mapping => mapping.input)
                 .ToArray();
-
-            return result;
         }
 
 
-        ReaderWriterLock locker = new ReaderWriterLock();
 
         /// <summary>
-        /// Calls a discovered function by the string name. The provided parameters are remapped dynamically
-        /// to the method defined in the discovered target.
+        /// Passes the given call to the stored callback
         /// </summary>
         /// <param name="function"></param>
         /// <param name="router"></param>
         /// <param name="model"></param>
         /// <param name="signal"></param>
         /// <param name="data"></param>
-        public void Call(string function, Router router, Model? model, Signal signal, object? data)
+        /// <returns>Returns true if the call was made, and false otherwise.</returns>
+        /// <remarks>This method may throw exceptions. It is expected that these will be caught
+        /// by the host provider.</remarks>
+        public bool Call(string function, Router router, Model? model, Signal signal, object? data)
         {
-            try
+            if (_callbackMapping.TryGetValue(function, out var value))
             {
-                //acquire reader to ensure that stale reference removal doesn't cause anything painful
-                locker.AcquireReaderLock(Timeout.Infinite);
-
-                if (_callMaps.TryGetValue(function, out var value))
-                {
-                    object? obj = null;
-
-                    // Check if the target object is still valid
-                    if (value.caller == null || value.caller.TryGetTarget(out obj))
-                    {
-                        //Prepare the parameter arrays
-                        //the inputs are mapped back to the outputs
-                        var inputParameters = new List<object?> { router, model, signal, data };
-                        var outputParameters = new object?[value.mapping.Length];
-
-                        //Remap the parameters correctly
-                        foreach (var map in value.mapping)
-                        {
-                            outputParameters[map.output] = inputParameters[map.input];
-                        }
-
-                        //Invoke the callback method with mapped parameters
-                        value.callback.Invoke(obj, outputParameters);
-                    }
-                    else
-                    {
-                        //Upgrade to a writer lock to modify shared state
-                        try
-                        {
-                            locker.UpgradeToWriterLock(Timeout.Infinite);
-                            _callMaps.Remove(function); //Remove stale entry
-                        }
-                        finally
-                        {
-                            locker.ReleaseWriterLock(); //release lock
-                        }
-                    }
-                }
+                value.Call(router, model, signal, data);
+                return true;
             }
-            finally
-            {
-                // Always release the reader lock
-                if (locker.IsReaderLockHeld)
-                {
-                    locker.ReleaseReaderLock();
-                }
-            }
+            return false;
         }
 
         /// <summary>
-        /// Searches the provided instance for Instance and Static methods that are flagged with <see cref="SignalDefinition"/>. The resulting
-        /// methods are loaded into the creator, and can be mapped to the router via <see cref="RegisterCalls(Router)"/>
+        /// Searches the provided instance for static and instance methods flagged with <see cref="SignalDefinition"/>. 
+        /// The methods are loaded into the creator and can be mapped to the router via <see cref="RegisterCalls(Router)"/>.
         /// 
-        /// <para>For compatibility, subscribing methods <b>MUST</b> have a Signal parameter, and may optionally provide parameters for Model, Router, and Data.</para>
+        /// <para>Subscribing methods <b>MUST</b> have a Signal parameter and may optionally include parameters for Model, Router, and Data.</para>
         /// </summary>
-        /// <param name="instance"></param>
+        /// <param name="instance">The instance whose methods are searched for SignalDefinition attributes.</param>
         public void DiscoverFromInstance(object instance)
         {
-            //get every static and instance method in the provided type
-            //including non-public methods
+            // Get all static and instance methods in the provided type, including non-public methods.
             var t = instance.GetType();
             foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static))
             {
-                //find the SignalDefinition attribute
+                // Look for the SignalDefinition attribute on the method.
                 var attr = m.GetCustomAttributes(true);
-                if(attr != null && attr.Length > 0)
+                if (attr != null && attr.Length > 0)
                 {
-                    foreach(SignalDefinition sd in attr.Where(x => x is SignalDefinition))
+                    foreach (SignalDefinition sd in attr.Where(x => x is SignalDefinition))
                     {
-                        //the name is either the signal name, or
-                        //otherwise defaults to the name of the method
-                        string? name = sd.SignalName;
-                        if (name == null) name = m.Name;
-
+                        // Use the signal name from the attribute, or default to the method name
+                        string? name = sd.SignalName ?? m.Name;
                         try
                         {
-                            //Now we need to find a suitable parameter mapping
+                            // If the method is static, no caller instance is needed;
+                            // Otherwise, use the provided instance.
                             object? caller = m.IsStatic ? null : instance;
+
+                            // Get the parameter mappings for the method.
                             var mapping = GetParameterMappings(m);
 
-                            if(mapping != null)
+                            if (mapping != null)
                             {
-                                _callMaps.TryAdd(name, (caller == null ? null : new WeakReference<object>(caller), m, mapping));
+                                // Determine the data type by filtering out parameters assignable to required parameters.
+                                Type? dataType = m.GetParameters()
+                                    .Select(p => p.ParameterType)
+                                    .FirstOrDefault(t => !ExplicitParameters.Any(rp => rp.IsAssignableFrom(t)));
+
+                                try
+                                {
+                                    Caller c = new Caller(caller, dataType, m, mapping);
+                                    _callbackMapping.Add(name, c);
+                                }
+                                catch (Exception e){
+                                    Console.WriteLine("Bonked: " + e);
+                                }
+
                             }
                         }
-                        catch(Exception e)
+                        catch (Exception e)
                         {
-                            //TODO log this back somewhere...
+                            // TODO: Log the exception for debugging purposes.
                         }
                     }
                 }
@@ -207,15 +211,62 @@ namespace ConnectFour.Discovery
         /// <param name="router"></param>
         public void RegisterCalls(Router router)
         {
-            foreach(var kv in _callMaps)
+            foreach(var kv in _callbackMapping)
             {
                 string name = kv.Key;
                 router.RegisterSignal<object>(name, (router, model, signal, data) => Call(name, router, model, signal, data));
             }
         }
 
+        /// <summary>
+        /// A container class for signal callbacks.
+        /// </summary>
+        public class Caller
+        {
+            /// <summary>
+            /// The callback that is manufactured for this class
+            /// </summary>
+            SignalDelegate _callback;
 
+            Type? dataType;
+            object? caller;
 
+            /// <summary>
+            /// Create a new caller. The constructor will generate the callback internally. TODO: Don't do this it's bad.
+            /// </summary>
+            /// <param name="caller"></param>
+            /// <param name="dataType"></param>
+            /// <param name="method"></param>
+            /// <param name="mapping"></param>
+            /// <exception cref="ArgumentNullException"></exception>
+            public Caller(object? caller, Type? dataType, MethodInfo method, (int i, int o)[]? mapping)
+            {
+                this.caller = caller;
+                this.dataType = dataType;
+                if (mapping != null)
+                {
+                    _callback = GenerateInvoker(caller, Path.GetRandomFileName().Remove(5), method, mapping.ToList());
+                }
+                else throw new ArgumentNullException("Parameter mapping must be non-null");
+            }
 
+            /// <summary>
+            /// Calls the internal delegate with the given parameters
+            /// </summary>
+            /// <param name="r"></param>
+            /// <param name="m"></param>
+            /// <param name="s"></param>
+            /// <param name="o"></param>
+            public void Call(Router? r, Model? m, Signal? s, object? o)
+            {
+                // Null the data here if it doesn't match
+                if(o != null && !o.GetType().IsAssignableTo(dataType))
+                {
+                    o = null;
+                }
+
+                _callback(caller, r, m, s, o);
+            }
+        }
     }
 }

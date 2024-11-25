@@ -48,7 +48,8 @@ namespace ConnectFour.Messaging
         /// <returns>True if the destination was valid, otherwise false</returns>
         public bool SendSignal(Signal message)
         {
-            return message.Destination.ReceiveMessage(message);
+            if (message.MessageBody == null) return false;
+            return message.Destination!.ReceiveMessage(message);
         }
 
 
@@ -65,6 +66,7 @@ namespace ConnectFour.Messaging
             //default 
             if (destination == null) destination = Parent.Instance!;
             if (sender == null) sender = Parent.Instance!;
+            
             return SendSignal(new Signal(Parent.Router, sender, destination, packet));
         }
 
@@ -79,11 +81,29 @@ namespace ConnectFour.Messaging
         /// <returns></returns>
         public bool SendSignal<T>(string signal, T? data = default, Model? destination = null, Model? sender = null)
         {
+            var content = Parent.Router.BuildSignalContent(signal, data);
 
-            return SendSignal(
-                packet: Parent.Router.BuildSignalContent(signal, data),
-                destination: destination,
-                sender: sender);
+            if (content != null)
+            {
+                return SendSignal(
+                    packet: content,
+                    destination: destination,
+                    sender: sender);
+            }
+            else
+            {
+                Content? gContent = Parent.Router.BuildSignalContent(signal, (object?)data);
+                if (gContent != null)
+                {
+                    return SendSignal(
+                       packet: gContent,
+                       destination: destination,
+                       sender: sender);
+                }
+            }
+
+            return false;
+
         }
 
         /// <summary>

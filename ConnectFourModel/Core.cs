@@ -32,15 +32,21 @@ namespace ConnectFour
         {
 
             //check if the signal is an exit signal
+            if (IsClosing) return;
+
             if(signal == "exit")
             {
+                Console.WriteLine("Received Exit Signal!");
+
+                IsClosing = true;
                 //now we should retrieve all of the models in the provider
                 List<Messaging.Model> models = new List<Messaging.Model>();
                 foreach(var model in Parent.Models.models.Values)
                 {
                     //now signal all of them (except for the Core, which should only be us) to exit
-                    if (model is Core) continue;
-                    SendSignal("exit", model); //tell it to bonk
+                    if (model == this) continue;
+
+                    Parent.Models.SendSignal(signal: "exit", destination: model);
                     models.Add(model);
                 }
                 //now count all of the models that are running
@@ -61,7 +67,7 @@ namespace ConnectFour
 
         public void Shutdown()
         {
-            SendSignal("exit");
+            Parent.Models.SendSignal("exit");
         }
 
 

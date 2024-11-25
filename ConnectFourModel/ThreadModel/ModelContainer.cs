@@ -109,21 +109,23 @@ namespace ConnectFour.ThreadModel
         }
 
         /// <summary>
-        /// Submits a running time to be tracked into the running average performance counter.
-        /// 
-        /// <para>Generally this would be called at the end of a loop</para>
+        /// Tracks the running time and updates the average performance counter.
+        /// Typically called at the end of a loop.
         /// </summary>
-        /// <param name="elapsed"></param>
+        /// <param name="elapsed">The time elapsed during the operation.</param>
         public virtual void TrackPerformance(TimeSpan elapsed)
         {
-            // Update average performance
+            // Get the current average performance, ensuring it's at least 1 ms
             double averageRate = Math.Max(1, _averagePerformance.TotalMilliseconds);
-            //estimate the number of times that we've iterated
-            //based on the current average
+
+            // Estimate the number of iterations based on the average performance
             double estIterations = PerformanceInterval.TotalMilliseconds / averageRate;
-            //now recalculate the estimated total, add the extra time, and find the new average
+
+            // Recalculate the total rate with the additional elapsed time, then compute the new average
             double totalRate = averageRate * estIterations + elapsed.TotalMilliseconds;
             totalRate /= (estIterations + 1);
+
+            // Update the average performance with the new value
             _averagePerformance = TimeSpan.FromMilliseconds(totalRate);
         }
 
@@ -210,8 +212,6 @@ namespace ConnectFour.ThreadModel
             }
         }
 
-
-
         /// <summary>
         /// Kills this entire thread host. Expected idempotency.
         /// </summary>
@@ -232,6 +232,7 @@ namespace ConnectFour.ThreadModel
         /// </summary>
         public virtual void Dispose()
         {
+            Gate.Dispose();
             Kill();
         }
 

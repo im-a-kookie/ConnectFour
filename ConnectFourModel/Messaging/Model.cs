@@ -90,6 +90,11 @@ namespace ConnectFour.Messaging
         public ModelContainer? Host;
 
         /// <summary>
+        /// Indicates that this instance is closing
+        /// </summary>
+        public bool IsClosing { get; protected set; }
+
+        /// <summary>
         /// Initialize a new model
         /// </summary>
         public Model(Provider provider)
@@ -97,16 +102,18 @@ namespace ConnectFour.Messaging
             //get a new ID
             ID = new();
             this.Parent = provider;
-            //We need to register ourselves in the provider
+            // We need to register ourselves in the provider
             provider.Models.Register(this);
 
-            //then create the host and subscribe to its loop/signal
+            // Then create the host and subscribe to its loop/signal
             Host = provider.ParallelScheme?.ProvideHost(this);
             if (Host == null) throw new Exception("Container was not provided!");
 
-            //now set up the message loop observers
+            // Now set up the message loop observers
             Host.OnLoop += (x) => Loop?.Invoke();
             Loop += Host_OnLoop;
+
+            Host.OnClose += (x) => this.Dispose();
         }
 
         /// <summary>
@@ -130,28 +137,28 @@ namespace ConnectFour.Messaging
         private void Host_OnLoop()
         {
             DateTime t = DateTime.UtcNow;
-            while (Queue.TryTake(out var m))
+            while (Queue.TryTake(out var m) && !IsClosing)
             {
+                // We got a message, let's read the bits and pieces
                 if (t > m.Expiration) continue;
                 Model sender = m.Sender ?? Parent.Instance!;
                 Model receiver = m.Destination ?? Parent.Instance!;
                 string name = m.HeaderName;
-                //we received a message, yay
 
 
-                //It wasn't handled yet
+                // It wasn't handled yet
                 if (!m.Handled)
                 {
-                    //So let's see if there's a signal handler for this header
+                    // So let's see if there's a signal handler for this header
                     var callback = Parent.Router.GetSignalProcessor(m.MessageBody);
                     var data = m.UnpackData();
 
-                    //check all of the method handlers
+                    // Check all of the method handlers
                     foreach (var n in OnReadSignal?.GetInvocationList() ?? [])
                     {
                         try
                         {
-                            //retrieve the callback type and ensure that it can be used for this invocation
+                            // Retrieve the callback type and ensure that it can be used for this invocation
                             var ct = callback!.GetType().GetGenericArguments().FirstOrDefault();
                             if (ct == null || ct.IsAssignableFrom(data?.GetType()))
                                 n.DynamicInvoke(EventType.RECEIVE, name, data, m);
@@ -163,7 +170,7 @@ namespace ConnectFour.Messaging
                         }
                     }
 
-                    //now use the default callback
+                    // Use the default callback if we have one, and aren't done yet
                     if (!m.Handled && callback != null)
                     {
                         Parent.Router.InvokeProcessorDynamic(callback, m, data);
@@ -174,22 +181,13 @@ namespace ConnectFour.Messaging
                         Parent.NotifyModelException(this, new Exception("The message was not handled..."));
                     }
 
-                    //Now, notify that the message has been processed completely by this pipeline
-                    //which provides an opportunity to tell another model that it's been processed
+                    // Now, notify that the message has been processed completely by this pipeline
+                    // This provides an opportunity to tell another model that it's been processed
                     m.CompletionCallback?.Complete(m);
                         
                 }
             }
         }
-
-        public void RegisterTypedReader<T>(string signal, SignalEvent<T> callback) where T : class
-        {
-            OnReadSignal += (a, b, c, d) =>
-            {
-                callback(a, b, c as T, d); // Safe cast, passes null if the cast fails
-            };
-        }
-
 
         /// <summary>
         /// Initialize a new messageable with the given string identifier
@@ -206,6 +204,14 @@ namespace ConnectFour.Messaging
         {
             //Ensure that garbage collected models are deregistered
             Parent.Models.Deregister(this);
+            QueueLock.Dispose();
+        }
+        public void Dispose()
+        {
+            //Clean us up, but we only need do it once
+            Parent.Models.Deregister(this);
+            QueueLock.Dispose();
+            GC.SuppressFinalize(this);
         }
 
         /// <summary>
@@ -248,7 +254,7 @@ namespace ConnectFour.Messaging
         internal void AddMessageSilent(Signal m)
         {
             bool flagged = false;
-            //enter the lock if we need
+            // Enter the lock if we need
             if (!QueueLock.IsWriteLockHeld)
             {
                 QueueLock.EnterWriteLock();
@@ -264,19 +270,13 @@ namespace ConnectFour.Messaging
             
         }
 
-        public void Dispose()
-        {
-            //Clean us up, but we only need do it once
-            Parent.Models.Deregister(this);
-            GC.SuppressFinalize(this);
-        }
 
         /// <summary>
         /// Called when a message is received by the underlying class. Can be
         /// overridden, but preferentially, subscribe to <see cref="OnReceiveSignal"/>
         /// </summary>
-        /// <param name="m"></param>
-        /// <returns>Boolean value representing whether the message was handled. Failure reasons;
+        /// <param name="m">The signal representing the message to be processed.</param>
+        /// <returns>Boolean value representing whether the message was handled. Failure reasons:
         /// <list type="bullet">
         /// <item>The host is currently in the suspended state</item>
         /// <item>The message has already expired</item>
@@ -284,66 +284,47 @@ namespace ConnectFour.Messaging
         /// </returns>
         public virtual bool ReceiveMessage(Signal m)
         {
+            // Check if the host is paused. If it is, return false to indicate the message was not handled.
             if (Host?.Paused ?? true) return false;
 
-            //enter the read lock if we aren't in write mode
+            // Enter read lock only if the write lock is not held (avoids deadlock).
             bool flagged = false;
             if (flagged = QueueLock.IsWriteLockHeld) QueueLock.EnterReadLock();
 
             try
             {
-                //don't queue expired messages
-                //TODO discarded messages should be logged
+                // Check if the message has expired. If it has, return false to avoid processing it.
+                // Expired messages should be discarded (TODO: log discarded messages).
                 if (m.Expiration < DateTime.UtcNow) return false;
 
-                //invoke the recipient event
+                // Attempt to invoke the recipient event if the message has not expired.
                 try
                 {
+                    // Raise the OnReceiveSignal event, signaling the reception of the message.
                     OnReceiveSignal?.Invoke(EventType.RECEIVE, m.HeaderName, null, m);
                 }
-                catch(Exception e)
+                catch (Exception e)
                 {
+                    // If an exception occurs, notify the parent of the exception.
                     Parent.NotifyModelException(this, e);
                 }
 
-                //and log it if it hasn't been handled
+                // If the message was not handled by the event, queue it for later processing.
                 if (!m.Handled)
                 {
-                    Queue.Add(m);
-                    Host?.NotifyWork();
+                    Queue.Add(m); 
+                    Host?.NotifyWork(); 
                 }
-                //it was handled correctly
+
+                // Return true to indicate the message was handled correctly.
                 return true;
             }
             finally
             {
-                //bonk
-                if(flagged) QueueLock.ExitReadLock();
+                // Exit read lock
+                if (flagged) QueueLock.ExitReadLock();
             }
-
-
         }
-
-        /// <summary>
-        /// Sends a signal to the given target
-        /// </summary>
-        /// <param name="signal"></param>
-        /// <param name="destination"></param>
-        public void SendSignal(string signal, Identifier? destination = null)
-        {
-            Parent.Models.SendSignal(signal, destination, this);
-        }
-
-        /// <summary>
-        /// Sends a signal to the given target
-        /// </summary>
-        /// <param name="signal"></param>
-        /// <param name="destination"></param>
-        public void SendSignal(string signal, Model destination)
-        {
-            Parent.Models.SendSignal(signal, destination.ID, this);
-        }
-
 
     }
 }

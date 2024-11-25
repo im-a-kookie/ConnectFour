@@ -27,7 +27,7 @@ namespace ConnectFour.ThreadModel.Pool
         {
             //Call bonk
             _running = false;
-            Child.SendSignal("exit");
+            Parent.Models.SendSignal("exit", Child);
             CallOnClose();
         }
 

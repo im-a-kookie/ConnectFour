@@ -34,7 +34,7 @@ namespace ConnectFour.ThreadModel.PerModel
                     //try bonk
                     if (_containedThread?.ThreadState == System.Threading.ThreadState.WaitSleepJoin)
                         _containedThread?.Interrupt();
-                    Child.SendSignal("exit");
+                    Parent.Models.SendSignal("exit", Child);
                 }
             }
             catch
@@ -49,7 +49,8 @@ namespace ConnectFour.ThreadModel.PerModel
         /// </summary>
         public override void NotifyWork()
         {
-            //does not need to do anything for this implementation
+            // Does not need to do anything for this implementation
+            // Except interrupt the thread to make sure it keeps looping
             try
             {
                 _containedThread?.Interrupt();
@@ -128,28 +129,27 @@ namespace ConnectFour.ThreadModel.PerModel
         /// </summary>
         private void _ThreadEntry()
         {
-            //don't start if we're already going
+            // Prevent starting if already running
             if (_running || _alive) return;
 
-            //Set some initial stuff
+            // Initialize and notify parent thread start
             var timer = Stopwatch.StartNew();
             Parent.NotifyThreadStart();
 
             try
             {
-                //flag everything now that the thread is started
+                // Set flags indicating the thread is running
                 _running = _alive = true;
                 CallOnStart();
 
-                //as long as we're running, do the stuff
+                // Keep running as long as conditions are met
                 while (_running && Parent.Running)
                 {
                     try
                     {
                         timer.Restart();
-                        // Wait for signal to proceed
-                        //if the queue contains a large number of messages, then the timeout is 
-                        //increased
+
+                        // Wait for signal to proceed; adjust wait time based on message count
                         int waitScaledTime = Child.TotalMessages * Child.TotalMessages;
                         if (Gate.WaitOne(-1))
                         {
@@ -159,17 +159,18 @@ namespace ConnectFour.ThreadModel.PerModel
                         {
                             try
                             {
-                                //enter the queuelock in write mode, which prevents the queue
-                                //from being accessed by the add-message approach
+                                // Lock on writes and now clean out expired messages
                                 Child.QueueLock.EnterWriteLock();
-                                //take all messages and strip old messages
                                 var timeNow = DateTime.UtcNow;
                                 int n = Child.TotalMessages;
+
+                                // go through the list of messages
                                 for (int i = 0; i < n; i++)
                                 {
                                     Child.TryReadNextMessage(out var m, 0);
                                     if (m != null && m.Expiration > timeNow)
                                     {
+                                        //it didn't expire, so we need to silently add it
                                         Child.AddMessageSilent(m);
                                     }
                                 }
@@ -180,7 +181,7 @@ namespace ConnectFour.ThreadModel.PerModel
                             }
                             finally
                             {
-                                Child.QueueLock.EnterWriteLock();
+                                Child.QueueLock.ExitWriteLock(); // Ensure release of lock
                             }
                         }
 
@@ -195,33 +196,24 @@ namespace ConnectFour.ThreadModel.PerModel
                             Thread.Sleep(-1);
                         }
                     }
-                    catch (ThreadInterruptedException e)
+                    catch (ThreadInterruptedException)
                     {
-                        //bonk?
+                        // Handle thread interruption
                     }
-                    // Update average performance
-                    double averageRate = Math.Max(1, _averagePerformance.TotalMilliseconds);
-                    //estimate the number of times that we've iterated
-                    //based on the current average
-                    double estIterations = PerformanceInterval.TotalMilliseconds / averageRate;
-                    //now recalculate the estimated total, add the extra time, and find the new average
-                    double totalRate = averageRate * estIterations + timer.ElapsedMilliseconds;
-                    totalRate /= (estIterations + 1);
-                    _averagePerformance = TimeSpan.FromMilliseconds(totalRate);
+
+                    TrackPerformance(timer.Elapsed); // track perf
                 }
             }
             catch (Exception ex)
             {
-                // Log unexpected errors
-                //Parent.HandleThreadException(this, ex);
+                // Log unexpected errors during thread execution
                 Parent.NotifyHostException(this, ex);
             }
             finally
             {
                 try
                 {
-                    //we're done so close us
-                    //now deset all the thingos
+                    // Cleanup after thread completion
                     _running = false;
                     Parent.ShutdownEvent -= OnShutdown;
                     Parent.NotifyThreadEnd();
@@ -230,16 +222,13 @@ namespace ConnectFour.ThreadModel.PerModel
                 }
                 catch (Exception ex)
                 {
-                    // Log cleanup errors
-                    //Parent.HandleThreadException(this, ex);
+                    // Handle cleanup errors
                     Parent.NotifyHostException(this, ex);
                     _alive = false;
                     _running = false;
                 }
-
-
             }
         }
-    
+
     }
 }

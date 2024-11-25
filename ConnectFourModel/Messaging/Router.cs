@@ -295,9 +295,21 @@ namespace ConnectFour.Messaging
         /// <param name="signal"></param>
         /// <param name="data"></param>
         /// <returns></returns>
-        public Content BuildSignalContent(string signal, object? data = null)
+        public Content? BuildSignalContent(string signal, object? data = null)
         {
-            return BuildSignalContent<object>(signal, data);
+            //1. Get the signal
+
+            if (data == null)
+            {
+                if (_nameIndexMap.TryGetValue(signal, out var index))
+                    return new EmptyContent((ushort)index);
+            }
+            else
+            {
+                return BuildSignalContent<object>(signal, data);
+            }
+            return null;
+            //bonk
         }
 
 
@@ -342,7 +354,7 @@ namespace ConnectFour.Messaging
                 if (gt == typeof(TypedSignalProcessor<>))
                 {
                     var callbackType = callback!.GetType().GetGenericArguments()[0];
-                    if (callbackType.IsAssignableFrom(data!.GetType()))
+                    if (data == null || callbackType.IsAssignableFrom(data!.GetType()))
                         callback.DynamicInvoke(this, m.Destination, m, data);
                     m.Handled = true;
                 }
@@ -356,7 +368,7 @@ namespace ConnectFour.Messaging
         /// </summary>
         /// <param name="c"></param>
         /// <returns></returns>
-        public string GetHeaderName(Content c)
+        public string GetHeaderName(Content? c)
         {
             int h = c.header & TYPEMASK;
             if (h < 0 || h >= _names.Count) return "";

@@ -22,7 +22,7 @@ namespace ConnectFour.Messaging
         /// <summary>
         /// The destination identifier for the message
         /// </summary>
-        public Model? Destination;
+        public Model Destination;
 
         /// <summary>
         /// The string body of the message
@@ -69,13 +69,24 @@ namespace ConnectFour.Messaging
             this.MessageBody = message;
         }
 
+
         /// <summary>
         /// Gets the name of the header in this message
         /// </summary>
         public string HeaderName => Registry.GetHeaderName(MessageBody);
 
+        public T? GetData<T>()
+        {
+            var data = MessageBody.GetData();
+            if (data is T t) return t;
+            return default;
+        }
 
-
+        public object? GetData()
+        {
+            var result = GetData<object>();
+            return result;
+        }
 
         public object? UnpackData()
         {

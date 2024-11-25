@@ -10,153 +10,154 @@ using System.Threading.Tasks;
 namespace ConnectFour.ThreadModel.Pool
 {
     /// <summary>
-    /// A simple parallel provider which implements the internal Threadpool to process messages.
+    /// A parallel provider that implements an internal thread pool for processing messages.
     /// 
-    /// This involves one supervisor thread, which controls the number of tasks that are running at
-    /// any given time.
+    /// It includes one supervisor thread that controls the number of tasks running at any given time.
     /// </summary>
     public class ParallelPool : ParallelSchema
     {
 
-        bool _live = false;
-        int _supervisors = 0;
-        int _pools = 0;
-        int _targetPools = 2;
-        int _targetDensity = 1;
-        int _currentGoal = 1;
+        Lock _updateLock = new();
+
+        // Flags and counters for managing pool state
+        private bool _live = false;
+        private int _supervisors = 0;
+        private int _pools = 0;
+        private int _targetPools = 2;
+        private int _targetDensity = 1;
+        private int _currentGoal = 1;
 
         /// <summary>
-        /// A collection of pool containers that are queued for updates
+        /// A collection of pool containers queued for updates.
         /// </summary>
-        private BlockingCollection<PoolContainer> _queuedUpdates = [];
+        private BlockingCollection<PoolContainer> _queuedUpdates = new();
 
         /// <summary>
-        /// Internal gate indicating that the supervisor should unpause
+        /// Gate to control when the supervisor should resume processing.
         /// </summary>
         private AutoResetEvent gate = new AutoResetEvent(false);
 
         public ParallelPool(int targetPools = -1, int targetDensity = 1) : base()
         {
-            _targetPools = targetPools;
-            if (_targetPools <= 0) _targetPools = Environment.ProcessorCount;
-            _targetDensity = targetDensity;
-            if (_targetDensity <= 0) _targetDensity = 1;
+            // Set the target pool and density values, ensuring defaults if invalid
+            _targetPools = targetPools > 0 ? targetPools : Environment.ProcessorCount;
+            _targetDensity = targetDensity > 0 ? targetDensity : 1;
         }
 
         protected override ModelContainer CreateContainer(Model requester)
         {
-            //ensure that the schema is supervising and a runner is running
-            if(Running && !_live) Task.Run(_SupervisorTask);
+            // Ensure that the schema is running and a supervisor task is active
+            if (Running && !_live) Task.Run(_SupervisorTask);
             if (_pools <= 0) Task.Run(_PoolTask);
-            gate.Set();
-            //doink
+            gate.Set(); // Allow the supervisor to begin
             return new PoolContainer(requester, Parent, this);
         }
 
         /// <summary>
-        /// Queues an update here
+        /// Queues an update for processing.
         /// </summary>
-        /// <param name="container"></param>
+        /// <param name="container">The pool container to be updated.</param>
         internal void Queue(PoolContainer container)
         {
-            //allow the supervisor to run and scale if needs be
+            // Allow the supervisor to run and scale if needed
             gate.Set();
+
+            // Increment counter and add to the queue if it's the first call
             if (Interlocked.Increment(ref container._counter) == 1)
             {
                 _queuedUpdates.Add(container);
             }
-            else Interlocked.Decrement(ref container._counter);
+            else
+            {
+                Interlocked.Decrement(ref container._counter); // Decrement if already queued
+            }
         }
 
         /// <summary>
-        /// The supervisor task logic
+        /// The supervisor task logic that manages pool scaling and message processing.
         /// </summary>
         private void _SupervisorTask()
         {
             try
             {
-                //count the number of supervisors
-                if(Interlocked.Increment(ref _supervisors) > 1)
+                // Ensure only one supervisor is running
+                if (Interlocked.Increment(ref _supervisors) > 1)
                 {
                     return;
                 }
-                //mark that we are live, and start running
+
                 _live = true;
-                Parent.NotifyThreadStart();
+                Parent?.NotifyThreadStart();
+
+                // Main supervisor loop
                 while (Running)
                 {
-                    //calculate the current goal number of threads
-                    _currentGoal = int.Min(_targetPools, int.Max(1, _ContainerRegistry.Count / _targetDensity));
-                    for(int i = _pools; i < _currentGoal; ++i)
+                    // Calculate the current goal number of threads based on registry count and target density
+                    _currentGoal = Math.Min(_targetPools, Math.Max(1, _ContainerRegistry.Count / _targetDensity));
+
+                    // Spawn additional pool tasks as needed
+                    for (int i = _pools; i < _currentGoal; ++i)
                     {
                         Task.Run(_PoolTask);
                     }
 
+                    // Wait for gate signal to proceed
                     gate.WaitOne(Timeout.Infinite);
                 }
             }
             finally
             {
-                //mark that we aren't live, and uncount the supervisor instance
+                // Cleanup and notify parent on supervisor shutdown
                 _live = false;
                 Interlocked.Decrement(ref _supervisors);
-                Parent.NotifyThreadEnd();
+                Parent?.NotifyThreadEnd();
             }
         }
 
-
+        /// <summary>
+        /// The pool task logic that processes messages from the queued updates.
+        /// </summary>
         private void _PoolTask()
         {
             try
             {
                 int index = Interlocked.Increment(ref _pools) - 1;
 
-                while(true)
+                while (true)
                 {
-                    //terminate if we go over the limit to total thread count
-                    if (index > _targetPools) return;
-                    Parent.NotifyThreadStart();
-                    //now check if we can get thingy
-                    if(_queuedUpdates.TryTake(out var update, TimeSpan.FromSeconds(30)))
+                    // Terminate if the total thread count exceeds the limit
+                    if (index >= _targetPools) return;
+
+                    Parent?.NotifyThreadStart();
+
+                    // Try to take an update from the queue with a 30-second timeout
+                    if (_queuedUpdates.TryTake(out var update, TimeSpan.FromSeconds(30)))
                     {
-                        //decrementing here is okay
-                        //1. Counter is incremented and work is queued
-                        //2. Work is dequeued
-                        //3. Counter is decremented <- more work can be provided to the update
-                        //4. All work in the update is dequeued
+                        // Decrement counter after work is dequeued
                         Interlocked.Decrement(ref update._counter);
-                        Interlocked.MemoryBarrierProcessWide();
+                        Interlocked.MemoryBarrier();
 
-                        //now we need to handle async await logic on the container
-                        //so that the container will sleep until its time is up
-                        //and then relog when it's ready to be updated again
-
-                        //we have an update to do
+                        // Process the update
                         update.CallOnLoop();
 
-                        //fire up a re-updater for whenever
-                        if(update.MinimumLoopTime.TotalMilliseconds >= 1)
+                        // If an update needs re-queuing, schedule it asynchronously
+                        if (update.MinimumLoopTime.TotalMilliseconds >= 1)
                         {
                             Task.Run(() =>
                             {
                                 Thread.Sleep(update.MinimumLoopTime);
-                                Queue(update);
+                                Queue(update); // Requeue after the minimum loop time
                             });
                         }
-
-
                     }
                 }
-
             }
             catch
             {
+                // Handle pool task failure
                 Interlocked.Decrement(ref _pools);
-                Parent.NotifyThreadEnd();
+                Parent?.NotifyThreadEnd();
             }
         }
-
-
-
     }
 }

@@ -6,17 +6,28 @@ using System.Threading.Tasks;
 
 namespace ConnectFour.Messaging.Packets
 {
+    /// <summary>
+    /// A class responsible for serializing and deserializing packet data, including handling different content types.
+    /// </summary>
     internal class PacketSerializer
     {
-        Router _router;
+        private Router _router;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PacketSerializer"/> class with the provided router.
+        /// </summary>
+        /// <param name="router">The router used for resolving types during deserialization.</param>
         public PacketSerializer(Router router)
         {
             _router = router;
         }
 
-        // Helper function to handle common stream operations
-        byte[] _WriteToStream(Action<BinaryWriter> writeAction)
+        /// <summary>
+        /// Helper function to handle common stream operations.
+        /// </summary>
+        /// <param name="writeAction">An action that performs the write operation using a <see cref="BinaryWriter"/>.</param>
+        /// <returns>A byte array representing the written data.</returns>
+        private byte[] _WriteToStream(Action<BinaryWriter> writeAction)
         {
             using MemoryStream ms = new();
             using BinaryWriter bw = new(ms);
@@ -25,10 +36,14 @@ namespace ConnectFour.Messaging.Packets
             return ms.ToArray();
         }
 
-
+        /// <summary>
+        /// Serializes the provided content into a byte array.
+        /// </summary>
+        /// <param name="c">The content to serialize.</param>
+        /// <returns>A byte array representing the serialized content, or null if the content type is unsupported.</returns>
         public byte[]? SerializeContent(Content c)
         {
-            switch(c)
+            switch (c)
             {
                 case Content<string> cs:
                     return _WriteToStream(bw =>
@@ -65,79 +80,72 @@ namespace ConnectFour.Messaging.Packets
             }
         }
 
-
+        /// <summary>
+        /// Serializes the provided packed data into a byte array.
+        /// </summary>
+        /// <param name="data">The packed data to serialize.</param>
+        /// <returns>A byte array representing the serialized packed data.</returns>
         internal byte[] SerializePacket(PackedData data) => data.Serialize();
 
+        /// <summary>
+        /// Writes the serialized packed data to a stream, including the length of the data.
+        /// </summary>
+        /// <param name="data">The packed data to write.</param>
+        /// <param name="s">The stream to write the data to.</param>
         public void WriteToStream(PackedData data, Stream s)
         {
             var d = SerializePacket(data);
-            s.Write(BitConverter.GetBytes(d.Length));
-            s.Write(SerializePacket(data));
+            s.Write(BitConverter.GetBytes(d.Length)); // Write the length of the data
+            s.Write(d); // Write the serialized data
         }
 
-
+        /// <summary>
+        /// Deserializes a packet from the given header and byte data, returning the deserialized content.
+        /// </summary>
+        /// <param name="header">The header for the packet.</param>
+        /// <param name="data">The byte array containing the serialized data.</param>
+        /// <returns>The deserialized content, or null if the data cannot be deserialized.</returns>
         public Content? DeserializePacket(ushort header, byte[] data)
         {
-            /*
-           using (MemoryStream ms = new MemoryStream())
-            {
-                using (BinaryWriter bw = new BinaryWriter(ms))
-                {
-                    bw.Write((byte)flags);
-                    bw.Write(typeHeader);
-                    if(typeHeader < 0) bw.Write(typeString);
-
-                    bw.Write(objectData.Length);
-                    bw.Write(objectData);
-                    bw.Flush();
-                    return ms.ToArray();
-                }
-            }
-             */
-
             using (MemoryStream ms = new())
             {
+                ms.Write(data, 0, data.Length); // Write the byte data to the memory stream
+                ms.Position = 0; // Reset position to the start of the stream
                 using (BinaryReader br = new(ms))
                 {
-                    PackedData.Flags f = (PackedData.Flags)br.ReadByte();
+                    PackedData.Flags f = (PackedData.Flags)br.ReadByte(); // Read the flags to determine the data type
 
-
-                    // Helper to create Content<T>
+                    // Helper to create Content<T> from the deserialized data
                     Content<T> CreateContent<T>(T data, Type dataType, ushort header) =>
                         new Content<T>(data) { datatype = dataType, header = header };
 
-
-                    //it contains just a string
+                    // Handle different content types based on the flags
                     if (f.HasFlag(PackedData.Flags.STRING))
                     {
                         return CreateContent(br.ReadString(), typeof(string), header);
                     }
-                    //it contains just an integer
                     else if (f.HasFlag(PackedData.Flags.INT))
                     {
                         return CreateContent(br.ReadInt32(), typeof(int), header);
-
                     }
-                    //it contains just a byte array
                     else if (f.HasFlag(PackedData.Flags.BYTE))
                     {
-                        int dataLen = br.ReadInt32();
+                        int dataLen = br.ReadInt32(); // Read the length of the byte array
                         return CreateContent(br.ReadBytes(dataLen), typeof(byte[]), header);
                     }
 
                     try
                     {
-
-                        //Handle non generic types
+                        // Handle non-generic types (PackedData)
                         short typeHeader = br.ReadInt16();
                         Type? t = typeHeader < 0
-                            ? Type.GetType(br.ReadString())
+                            ? Type.GetType(br.ReadString()) // Load the type from a string if the header is negative
                             : _router._UnsafeGetFromIndex(typeHeader)?.outputType;
+
                         if (t == null) throw new InvalidDataException("Could not resolve type!");
 
-                        //now we just need to load the data out and make the container
-                        int len = br.ReadInt32();
-                        if (len < 0 || len > ms.Length - ms.Position) // Validate bounds
+                        int len = br.ReadInt32(); // Read the data length
+                        if (len < 0 || len > ms.Length - ms.Position) // Validate the data length
                             throw new InvalidDataException("Invalid data length.");
 
                         return CreateContent(new PackedData
@@ -145,28 +153,19 @@ namespace ConnectFour.Messaging.Packets
                             flags = f,
                             typeHeader = typeHeader,
                             objectType = t,
-                            objectData = br.ReadBytes(len)
+                            objectData = br.ReadBytes(len) // Read the object data
                         }, typeof(PackedData), header);
                     }
-                    //catch if the type is not correctly loaded
                     catch (TypeLoadException e)
                     {
                         throw new InvalidDataException("Could not resolve type!", e);
                     }
-                    //catch if the index is out of range
-                    catch(IndexOutOfRangeException e)
+                    catch (IndexOutOfRangeException e)
                     {
                         throw new InvalidDataException("Type header invalid index!", e);
                     }
                 }
             }
-            
-
-
-
-
         }
-
-
     }
 }

@@ -1,9 +1,4 @@
 ﻿using ConnectFour.Messaging.Packets;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ConnectFour.Exceptions
 {
@@ -19,7 +14,7 @@ namespace ConnectFour.Exceptions
         /// <summary>  The type being packed </summary>
         public Type? CausingType { get; private set; } = null;
 
-        public PackingException(Type type, string? message = "Generic Packing Exception", Exception? innerException = null) : base (message, innerException)
+        public PackingException(Type type, string? message = "Generic Packing Exception", Exception? innerException = null) : base(message, innerException)
         {
             CausingType = type;
         }
@@ -94,7 +89,7 @@ namespace ConnectFour.Exceptions
             new PackingException(
                 cause: encoder,
                 type: t,
-                message: $"Endcoding failed for {t}." + 
+                message: $"Endcoding failed for {t}." +
                     (inner == null ? "" : $" {inner.GetType().Name} was thrown by encoder delegate."),
                 innerException: inner);
 
@@ -105,7 +100,7 @@ namespace ConnectFour.Exceptions
             new PackingException(
                 cause: decoder,
                 type: t,
-                message: $"Decoding failed for {t}." + 
+                message: $"Decoding failed for {t}." +
                     (inner == null ? "" : $" {inner.GetType().Name} was thrown by encoder delegate."),
                 innerException: inner);
 

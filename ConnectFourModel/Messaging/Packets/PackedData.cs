@@ -48,7 +48,7 @@
                 {
                     bw.Write((byte)flags);
                     bw.Write(typeHeader);
-                    if(typeHeader < 0) bw.Write(typeString);
+                    if (typeHeader < 0) bw.Write(typeString);
 
                     bw.Write(objectData.Length);
                     bw.Write(objectData);

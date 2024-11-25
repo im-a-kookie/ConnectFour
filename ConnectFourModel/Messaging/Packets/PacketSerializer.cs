@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace ConnectFour.Messaging.Packets
+﻿namespace ConnectFour.Messaging.Packets
 {
     /// <summary>
     /// A class responsible for serializing and deserializing packet data, including handling different content types.

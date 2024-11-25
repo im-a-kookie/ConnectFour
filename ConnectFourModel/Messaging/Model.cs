@@ -1,17 +1,5 @@
-﻿using Microsoft.Win32;
-using ConnectFour.ThreadModel;
-using System;
+﻿using ConnectFour.ThreadModel;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Threading.Tasks;
-using System.Reflection.PortableExecutable;
-using static ConnectFour.Messaging.Router;
-using static System.Runtime.InteropServices.JavaScript.JSType;
-using static ConnectFour.Messaging.Model;
 
 namespace ConnectFour.Messaging
 {
@@ -175,8 +163,8 @@ namespace ConnectFour.Messaging
                     {
                         Parent.Router.InvokeProcessorDynamic(callback, m, data);
                     }
- 
-                    if(!m.Handled)
+
+                    if (!m.Handled)
                     {
                         Parent.NotifyModelException(this, new Exception("The message was not handled..."));
                     }
@@ -184,7 +172,7 @@ namespace ConnectFour.Messaging
                     // Now, notify that the message has been processed completely by this pipeline
                     // This provides an opportunity to tell another model that it's been processed
                     m.CompletionCallback?.Complete(m);
-                        
+
                 }
             }
         }
@@ -221,7 +209,7 @@ namespace ConnectFour.Messaging
         /// <returns>The next message, or null if no messages</returns>
         public Signal? ReadNextMessage(int msTimeout = 0)
         {
-            if(Queue.TryTake(out var m, msTimeout))
+            if (Queue.TryTake(out var m, msTimeout))
             {
                 return m;
             }
@@ -262,12 +250,12 @@ namespace ConnectFour.Messaging
             }
             Queue.Add(m);
 
-            if(flagged)
+            if (flagged)
             {
                 //bonk
                 QueueLock.ExitWriteLock();
             }
-            
+
         }
 
 
@@ -312,8 +300,8 @@ namespace ConnectFour.Messaging
                 // If the message was not handled by the event, queue it for later processing.
                 if (!m.Handled)
                 {
-                    Queue.Add(m); 
-                    Host?.NotifyWork(); 
+                    Queue.Add(m);
+                    Host?.NotifyWork();
                 }
 
                 // Return true to indicate the message was handled correctly.

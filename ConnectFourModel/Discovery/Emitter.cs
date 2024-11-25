@@ -1,14 +1,7 @@
 ﻿using ConnectFour.Messaging;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Linq.Expressions;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Runtime.CompilerServices;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace ConnectFour.Discovery
 {
@@ -129,7 +122,7 @@ namespace ConnectFour.Discovery
         public static List<(int src, int dst)> OffsetSourceMapping(List<(int src, int dst)> tuples, int offset = 1)
         {
             List<(int src, int dst)> result = new();
-            foreach(var t in tuples)
+            foreach (var t in tuples)
             {
                 result.Add((t.src + offset, t.dst));
             }

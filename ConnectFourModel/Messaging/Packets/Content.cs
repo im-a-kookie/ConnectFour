@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace ConnectFour.Messaging.Packets
+﻿namespace ConnectFour.Messaging.Packets
 {
     /// <summary>
     /// An underlying content type that handles data packets

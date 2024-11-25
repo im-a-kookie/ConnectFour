@@ -1,11 +1,4 @@
 ﻿using ConnectFour.Messaging;
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Data.SqlTypes;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ConnectFour.ThreadModel.PerModel
 {

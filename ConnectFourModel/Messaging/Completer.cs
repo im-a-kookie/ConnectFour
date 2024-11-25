@@ -1,13 +1,4 @@
-﻿using ConnectFour.Messaging.Packets;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
-
-
-namespace ConnectFour.Messaging
+﻿namespace ConnectFour.Messaging
 {
     /// <summary>
     /// An abstract base class representing a completer, which is used to handle the completion of an asynchronous operation.

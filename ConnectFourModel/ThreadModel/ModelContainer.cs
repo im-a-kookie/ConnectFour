@@ -1,11 +1,4 @@
 ﻿using ConnectFour.Messaging;
-using ConnectFour.ThreadModel.PerModel;
-using ConnectFour.ThreadModel.Pool;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ConnectFour.ThreadModel
 {
@@ -189,7 +182,7 @@ namespace ConnectFour.ThreadModel
         /// </summary>
         public virtual void Pause()
         {
-            lock(this)
+            lock (this)
             {
                 _paused = true;
                 _PauseImplementation();

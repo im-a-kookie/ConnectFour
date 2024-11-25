@@ -1,9 +1,4 @@
 ﻿using ConnectFour.Messaging;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ConnectFour.Exceptions
 {
@@ -29,7 +24,7 @@ namespace ConnectFour.Exceptions
         /// <param name="cause"></param>
         /// <param name="signal"></param>
         /// <returns></returns>
-        public static RoutingException UnknownSignal(Router cause, string signal) => 
+        public static RoutingException UnknownSignal(Router cause, string signal) =>
             new RoutingException(cause, $"Cannot Resolve Signal Identifier: '{signal}'. Signal identifiers must be registered explicitly.");
 
         /// <summary>

@@ -1,13 +1,4 @@
-﻿using ConnectFour;
-using ConnectFour.Messaging;
-using ConnectFour.ThreadModel;
-using ConnectFour.ThreadModel.PerModel;
-using System;
-using System.Collections.Generic;
-using System.Dynamic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using ConnectFour.Messaging;
 
 namespace ConnectFour.ThreadModel.Pool
 {

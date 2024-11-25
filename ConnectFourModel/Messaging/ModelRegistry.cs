@@ -1,11 +1,5 @@
 ﻿using ConnectFour.Messaging.Packets;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ConnectFour.Messaging
 {
@@ -66,7 +60,7 @@ namespace ConnectFour.Messaging
             //default 
             if (destination == null) destination = Parent.Instance!;
             if (sender == null) sender = Parent.Instance!;
-            
+
             return SendSignal(new Signal(Parent.Router, sender, destination, packet));
         }
 
@@ -160,7 +154,7 @@ namespace ConnectFour.Messaging
         /// <param name="destination"></param>
         /// <param name="sender"></param>
         /// <returns></returns>
-        public Task<OUT?> AwaitSignal<IN, OUT>(string signal, IN? data, Model? destination = null, Model? sender = null) where IN: notnull
+        public Task<OUT?> AwaitSignal<IN, OUT>(string signal, IN? data, Model? destination = null, Model? sender = null) where IN : notnull
         {
             return AwaitSignal<OUT>(
                 packet: Parent.Router.BuildSignalContent(signal, data),

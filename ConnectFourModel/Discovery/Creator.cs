@@ -1,19 +1,6 @@
 ﻿using ConnectFour.Messaging;
-using System;
-using System.Collections.Frozen;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.Diagnostics;
-using System.Dynamic;
-using System.Linq;
-using System.Linq.Expressions;
 using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.Marshalling;
-using System.Text;
-using System.Threading.Tasks;
 using static ConnectFour.Discovery.Emitter;
-using static System.Collections.Specialized.BitVector32;
 
 namespace ConnectFour.Discovery
 {
@@ -190,7 +177,8 @@ namespace ConnectFour.Discovery
                                     Caller c = new Caller(caller, dataType, m, mapping);
                                     _callbackMapping.Add(name, c);
                                 }
-                                catch (Exception e){
+                                catch (Exception e)
+                                {
                                     Console.WriteLine("Bonked: " + e);
                                 }
 
@@ -211,7 +199,7 @@ namespace ConnectFour.Discovery
         /// <param name="router"></param>
         public void RegisterCalls(Router router)
         {
-            foreach(var kv in _callbackMapping)
+            foreach (var kv in _callbackMapping)
             {
                 string name = kv.Key;
                 router.RegisterSignal<object>(name, (router, model, signal, data) => Call(name, router, model, signal, data));
@@ -260,7 +248,7 @@ namespace ConnectFour.Discovery
             public void Call(Router? r, Model? m, Signal? s, object? o)
             {
                 // Null the data here if it doesn't match
-                if(o != null && !o.GetType().IsAssignableTo(dataType))
+                if (o != null && !o.GetType().IsAssignableTo(dataType))
                 {
                     o = null;
                 }

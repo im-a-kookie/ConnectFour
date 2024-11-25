@@ -1,10 +1,8 @@
-﻿using ConnectFour.Exceptions;
+﻿using ConnectFour.Configuration;
+using ConnectFour.Exceptions;
 using ConnectFour.Messaging.Packets;
 using System.Text;
 using System.Text.Json;
-using ConnectFour.Configuration;
-using System.Runtime.CompilerServices;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ConnectFour.Messaging
 {
@@ -67,7 +65,7 @@ namespace ConnectFour.Messaging
         /// </summary>
         public void BuildRouter()
         {
-            lock(this)
+            lock (this)
             {
                 _built = true;
             }
@@ -81,9 +79,9 @@ namespace ConnectFour.Messaging
         public Router(bool applyDefaultSignals = true, bool applyDefaultTypes = true)
         {
 
-            if(applyDefaultSignals) RegisterDefaultSignals();
+            if (applyDefaultSignals) RegisterDefaultSignals();
             if (applyDefaultTypes) RegisterDefaultInterpreters();
-            
+
         }
 
         /// <summary>
@@ -112,7 +110,7 @@ namespace ConnectFour.Messaging
         /// </summary>
         internal Lock.Scope ModificationScope => _GetModificationScope();
 
-         public void RegisterDefaultSignals()
+        public void RegisterDefaultSignals()
         {
             using (ModificationScope)
             {
@@ -148,14 +146,14 @@ namespace ConnectFour.Messaging
         public void RegisterDefaultInterpreters()
         {
             using (ModificationScope)
-            { 
+            {
                 if (HasGenericDecoder) return;
                 if (HasGenericEncoder) return;
 
                 HasGenericEncoder = true;
                 HasGenericDecoder = true;
 
-                if(!_encoderIndexMap.ContainsKey(typeof(object)))
+                if (!_encoderIndexMap.ContainsKey(typeof(object)))
                 {
                     RegisterTypePackers<object>(
                         (object data) => JsonSerializer.SerializeToUtf8Bytes(data),
@@ -163,16 +161,16 @@ namespace ConnectFour.Messaging
                 }
                 //go through a list of all the basic types and things
                 if (!_encoderIndexMap.ContainsKey(typeof(string)))
-                    RegisterTypePackers( Encoding.UTF8.GetBytes, Encoding.UTF8.GetString );
-                
-                if (!_encoderIndexMap.ContainsKey(typeof(float))) 
+                    RegisterTypePackers(Encoding.UTF8.GetBytes, Encoding.UTF8.GetString);
+
+                if (!_encoderIndexMap.ContainsKey(typeof(float)))
                     RegisterTypePackers(BitConverter.GetBytes, BitConverter.ToSingle);
 
                 if (!_encoderIndexMap.ContainsKey(typeof(double)))
                     RegisterTypePackers(BitConverter.GetBytes, BitConverter.ToDouble);
 
-                if (!_encoderIndexMap.ContainsKey(typeof(short))) 
-                    RegisterTypePackers( BitConverter.GetBytes, BitConverter.ToInt16);
+                if (!_encoderIndexMap.ContainsKey(typeof(short)))
+                    RegisterTypePackers(BitConverter.GetBytes, BitConverter.ToInt16);
 
                 if (!_encoderIndexMap.ContainsKey(typeof(int)))
                     RegisterTypePackers(BitConverter.GetBytes, BitConverter.ToInt32);
@@ -194,7 +192,7 @@ namespace ConnectFour.Messaging
                 }
 
                 //Now we can encode things like filestreams
-                if(!_encoderIndexMap.ContainsKey(typeof(FileStream)))
+                if (!_encoderIndexMap.ContainsKey(typeof(FileStream)))
                 {
                     RegisterTypeEncoder<FileStream, MemoryStream>((FileStream data) =>
                     {
@@ -385,7 +383,7 @@ namespace ConnectFour.Messaging
         /// <param name="decoder"></param>
         public void RegisterTypePackers<I, O>(PacketEncoder<I, O>.Encoder encoder, PacketDecoder<O>.Decoder decoder)
         {
-            using(ModificationScope)
+            using (ModificationScope)
             {
                 RegisterTypeEncoder(encoder);
                 RegisterTypeDecoder(decoder);
@@ -402,7 +400,7 @@ namespace ConnectFour.Messaging
         public void RegisterTypeEncoder<I, O>(PacketEncoder<I, O>.Encoder encoder)
         {
             using (ModificationScope)
-            { 
+            {
                 //register the encoder
                 if (!_encoderIndexMap.ContainsKey(typeof(I)))
                 {
@@ -464,7 +462,7 @@ namespace ConnectFour.Messaging
         /// <typeparam name="T"></typeparam>
         /// <param name="encoder"></param>
         /// <param name="decoder"></param>
-        public void RegisterTypePackers<T>(PacketEncoder<T,T>.Encoder encoder, ByteDecoder<T> decoder)
+        public void RegisterTypePackers<T>(PacketEncoder<T, T>.Encoder encoder, ByteDecoder<T> decoder)
         {
             RegisterTypePackers<T, T>(encoder, (Type t, byte[] data) => (T)decoder(data));
         }

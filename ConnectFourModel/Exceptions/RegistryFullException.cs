@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace ConnectFour.Exceptions
+﻿namespace ConnectFour.Exceptions
 {
     /// <summary>
     /// An exception indicating the filling of a registry

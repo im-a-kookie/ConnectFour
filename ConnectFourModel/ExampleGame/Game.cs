@@ -1,12 +1,4 @@
-﻿using ConnectFour.Messaging;
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace ConnectFour.ConnectFour
+﻿namespace ConnectFour.ConnectFour
 {
     /// <summary>
     /// A game instance. This class provides, effectively, a lobby for one instance of the game,

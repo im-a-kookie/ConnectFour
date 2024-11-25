@@ -1,9 +1,4 @@
 ﻿using ConnectFour.Messaging.Packets;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ConnectFour.Messaging
 {
@@ -58,8 +53,8 @@ namespace ConnectFour.Messaging
         public Signal(Router registry, Model? sender, Model destination, Content message)
         {
             this.Registry = registry;
-            this.Sender = sender; 
-            this.Destination = destination; 
+            this.Sender = sender;
+            this.Destination = destination;
             this.MessageBody = message;
         }
 

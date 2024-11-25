@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Text;
 
 namespace ConnectFour
 {
@@ -43,11 +38,9 @@ namespace ConnectFour
         /// <summary>
         /// Generates a new Unique IQ for the current instance of the model
         /// </summary>
-        public Identifier() 
-            : this($"_{
-                To42BitHash(
-                  Interlocked.Increment(ref _allocated))
-                }") 
+        public Identifier()
+            : this($"_{To42BitHash(
+                  Interlocked.Increment(ref _allocated))}")
         { }
 
         /// <summary>

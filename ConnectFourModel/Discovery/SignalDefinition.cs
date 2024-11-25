@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace ConnectFour.Discovery
+﻿namespace ConnectFour.Discovery
 {
     /// <summary>
     /// The SignalDefinition is applied to methods that receive at least: A Signal, and optionally a Router and an Object

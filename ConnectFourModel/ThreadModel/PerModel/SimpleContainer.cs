@@ -1,12 +1,5 @@
 ﻿using ConnectFour.Messaging;
-using ConnectFour.ThreadModel.Pool;
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using static ConnectFour.Provider;
 
 namespace ConnectFour.ThreadModel.PerModel
@@ -72,10 +65,10 @@ namespace ConnectFour.ThreadModel.PerModel
         /// </summary>
         public override void StartHost()
         {
-            lock(this)
+            lock (this)
             {
-                if (    _containedThread != null 
-                    &&  _containedThread.ThreadState != System.Threading.ThreadState.Stopped)
+                if (_containedThread != null
+                    && _containedThread.ThreadState != System.Threading.ThreadState.Stopped)
                 {
                     return;
                 }

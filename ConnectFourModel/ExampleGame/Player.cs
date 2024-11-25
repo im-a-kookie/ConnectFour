@@ -1,5 +1,4 @@
 ﻿using System.Collections.Concurrent;
-using System.Drawing;
 
 namespace ConnectFour.ConnectFour
 {

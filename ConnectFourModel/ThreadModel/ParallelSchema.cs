@@ -1,10 +1,5 @@
 ﻿using ConnectFour.Messaging;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ConnectFour.ThreadModel
 {
@@ -58,7 +53,7 @@ namespace ConnectFour.ThreadModel
         /// <param name="parent"></param>
         public ParallelSchema()
         {
-            
+
         }
 
         internal void SetParent(Provider p)
@@ -83,7 +78,7 @@ namespace ConnectFour.ThreadModel
 
 
 
-        
+
 
     }
 }

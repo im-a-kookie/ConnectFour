@@ -1,15 +1,7 @@
 ﻿using ConnectFour.Messaging;
 using ConnectFour.ThreadModel;
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
-using static ConnectFour.Core;
 
 namespace ConnectFour
 {
@@ -99,7 +91,7 @@ namespace ConnectFour
         /// <param name="handler"></param>
         public void RegisterControlSignal(string signal, Router.SignalProcessor handler)
         {
-            lock(this)
+            lock (this)
             {
                 if (Built) return;
                 Router.RegisterSignal(signal, handler);
@@ -113,7 +105,7 @@ namespace ConnectFour
         /// </summary>
         public void Start()
         {
-            lock(this)
+            lock (this)
             {
                 if (Built) return;
                 Router.BuildRouter();
@@ -121,7 +113,7 @@ namespace ConnectFour
                 _built = true;
                 _running = true;
                 Instance = new Core(this, Models);
-                
+
             }
         }
 
@@ -209,7 +201,7 @@ namespace ConnectFour
 
             Stopwatch s = Stopwatch.StartNew();
             int n = 0;
-            while(timeoutMs == 0 || (int)s.ElapsedMilliseconds < timeoutMs)
+            while (timeoutMs == 0 || (int)s.ElapsedMilliseconds < timeoutMs)
             {
                 //block until al threads are gone
                 if (_liveThreads > (flag ? 1 : 0))

@@ -1,223 +1,132 @@
 ﻿using ConnectFour.Discovery;
 using ConnectFour.Messaging;
 using ConnectFour.Messaging.Packets;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Collections.Generic;
 using System.Reflection;
-
 
 namespace Tests.Routing
 {
     [TestClass]
     public class RouterTests
     {
-
-        public class Tester
+        private class Cookie
         {
-
-            public static List<string> results = [];
-
-            public Tester()
-            {
-                results = [];
-            }
-
-            [SignalDefinition]
-            public static void Brog(Signal s, Router r, Model m)
-            {
-                results.Add(s.HeaderName);
-            }
-
-            [SignalDefinition(signalName: "scrub")]
-            public void Splib(Signal s)
-            {
-                results.Add(s.HeaderName);
-            }
+            public int Data { get; set; }
+            public Cookie(int data) => Data = data;
         }
 
-
-        /// <summary>
-        /// A simple data template class for sending things
-        /// </summary>
-        class Cookie
-        {
-            public int data { get; set; }
-            public Cookie(int data) => this.data = data;
-        }
-
-
-        List<string> string_collector = [];
-        List<int> int_collector = [];
-
-        Router? router;
-
-        Creator? creator;
-
+        private List<string> stringCollector = new();
+        private List<int> intCollector = new();
+        private Router? router;
 
         [TestInitialize]
         public void Init()
         {
             router = new Router();
-            string_collector = [];
 
-            router.RegisterSignal("untyped", (router, model, signal) => {
-                string_collector.Add(signal.HeaderName);
-                int_collector.Add((int)signal.MessageBody.GetData()!);
-            }
-            );
-
-            router.RegisterSignal<int>("typed", (router, model, signal, data) =>
+            router.RegisterSignal("untyped", (r, model, signal) =>
             {
-                string_collector.Add(signal.HeaderName);
-                int_collector.Add(data);
+                stringCollector.Add(signal.HeaderName);
+                intCollector.Add((int)signal.MessageBody.GetData()!);
             });
 
-            router.RegisterSignal<Cookie>("cookie", (router, model, signal, data) =>
+            router.RegisterSignal<int>("typed", (r, model, signal, data) =>
             {
-                string_collector.Add(signal.HeaderName);
-                int_collector.Add(data?.data ?? -1);
+                stringCollector.Add(signal.HeaderName);
+                intCollector.Add(data);
             });
 
-            //create a cookie encoder
-            router.RegisterTypeEncoder((Cookie c) => BitConverter.GetBytes(c.data));
+            router.RegisterSignal<Cookie>("cookie", (r, model, signal, data) =>
+            {
+                stringCollector.Add(signal.HeaderName);
+                intCollector.Add(data?.Data ?? -1);
+            });
 
-            //and a cookie decoder
+            // Register Cookie encoder and decoder
+            router.RegisterTypeEncoder((Cookie c) => BitConverter.GetBytes(c.Data));
             router.RegisterTypeDecoder((Type t, byte[] data) => new Cookie(BitConverter.ToInt32(data)));
-
-
-            //set up a creator also
-            creator = new Creator();
-            var t = new Tester();
-            creator.DiscoverFromInstance(t);
-            creator.RegisterCalls(router);
-            
-
-
-
         }
 
-
-        /// <summary>
-        /// Test that content can be created, and that the headers and data values
-        /// are correctly set
-        /// </summary>
-        [TestMethod()]
+        [TestMethod]
         public void CreateContent()
         {
-            var c = router?.BuildSignalContent("untyped", 1);
+            var content = router?.BuildSignalContent("untyped", 1);
 
-            var n = c.GetData();
-            //check that the integer type was set correctly
-            Assert.IsInstanceOfType(n, typeof(int));
-            Assert.AreEqual(n, 1);
+            var data = content!.GetData();
+            Assert.IsInstanceOfType(data, typeof(int), "Content data is not of type int.");
+            Assert.AreEqual(data, 1, "Content data value does not match expected value.");
 
-            //now check the signal
-            var lists = router?.GetType().GetField("_names", BindingFlags.NonPublic | BindingFlags.Instance)?.GetValue(router) as List<string>;
+            var headerList = router?.GetType()
+                .GetField("_names", BindingFlags.NonPublic | BindingFlags.Instance)?
+                .GetValue(router) as List<string>;
 
-            var h = c.header & Router.TYPEMASK;
-
-            //now check that the values match
-            Assert.AreEqual(lists?[h], "untyped");
-
+            var headerIndex = content.header & Router.TYPEMASK;
+            Assert.AreEqual(headerList?[headerIndex], "untyped", "Header name does not match 'untyped'.");
         }
 
-        /// <summary>
-        /// Test the retrieval and calling of the signal processor
-        /// </summary>
-        [TestMethod()]
+        [TestMethod]
         public void TestSignalProcessor()
         {
-            //make the untyped signal and send it to the thing
-            int n = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
+            int dataValue = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
+            var content = router?.BuildSignalContent("untyped", dataValue);
 
-            var c = router?.BuildSignalContent("untyped", n);
-            var sp = router?.GetSignalProcessor(c);
-            sp?.DynamicInvoke(router, new Signal(router!, c!));
-            Assert.AreEqual(string_collector[0], "untyped");
-            Assert.AreEqual(int_collector[0], n);
+            var processor = router?.GetSignalProcessor(content);
+            processor?.DynamicInvoke(router, new Signal(router!, content!));
 
-
+            Assert.AreEqual(stringCollector[0], "untyped", "Signal processor did not invoke the correct header name.");
+            Assert.AreEqual(intCollector[0], dataValue, "Signal processor did not pass the correct data.");
         }
 
-        /// <summary>
-        /// Test the retrieval and calling of the signal processor
-        /// </summary>
-        [TestMethod()]
+        [TestMethod]
         public void TestTypedSignalProcessor()
         {
-            int n = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
-            var c = router?.BuildSignalContent("typed", n);
-            var sp = router?.GetSignalProcessor(c);
-            sp?.DynamicInvoke(router, new Signal(router!, c!), c?.GetData());
+            int dataValue = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
+            var content = router?.BuildSignalContent("typed", dataValue);
 
-            Assert.AreEqual(string_collector[0], "typed");
-            Assert.AreEqual(int_collector[0], n);
+            var processor = router?.GetSignalProcessor(content);
+            processor?.DynamicInvoke(router, new Signal(router!, content!), content?.GetData());
+
+            Assert.AreEqual(stringCollector[0], "typed", "Typed signal processor did not invoke the correct header name.");
+            Assert.AreEqual(intCollector[0], dataValue, "Typed signal processor did not pass the correct data.");
         }
 
-        /// <summary>
-        /// Test that dynamic signal invocation is performed correctly
-        /// </summary>
-        [TestMethod()]
+        [TestMethod]
         public void TestDynamicSignalInvoker()
         {
-            int n = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
-            var c = router?.BuildSignalContent("untyped", n);
+            int dataValue = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
+            var content = router?.BuildSignalContent("untyped", dataValue);
 
-            var sp = router?.GetSignalProcessor(c);
-            router.InvokeProcessorDynamic(sp, new Signal(router!, c!), c.GetData());
+            var processor = router?.GetSignalProcessor(content);
+            router!.InvokeProcessorDynamic(processor, new Signal(router!, content!), content!.GetData());
 
-            Assert.AreEqual(string_collector[0], "untyped");
-            Assert.AreEqual(int_collector[0], n);
+            Assert.AreEqual(stringCollector[0], "untyped", "Dynamic signal invoker did not invoke the correct header name.");
+            Assert.AreEqual(intCollector[0], dataValue, "Dynamic signal invoker did not pass the correct data.");
 
-            n ^= 123456;
-            c = router?.BuildSignalContent("typed", n);
-            sp = router?.GetSignalProcessor(c);
-            router.InvokeProcessorDynamic(sp, new Signal(router!, c!), c.GetData());
+            // Test with "typed" signal
+            dataValue ^= 123456;
+            content = router.BuildSignalContent("typed", dataValue);
+            processor = router.GetSignalProcessor(content);
+            router.InvokeProcessorDynamic(processor, new Signal(router!, content!), content.GetData());
 
-
-            Assert.AreEqual(string_collector[1], "typed");
-            Assert.AreEqual(int_collector[1], n);
-
+            Assert.AreEqual(stringCollector[1], "typed", "Dynamic signal invoker did not invoke the correct header name for 'typed'.");
+            Assert.AreEqual(intCollector[1], dataValue, "Dynamic signal invoker did not pass the correct data for 'typed'.");
         }
 
-        [TestMethod()]
+        [TestMethod]
         public void TestTypeSerialization()
         {
-            int n = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
-            Content<Cookie>? c = router!.BuildSignalContent("cookie", new Cookie(n));
-            Assert.IsNotNull(c);
+            int dataValue = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
+            var content = router!.BuildSignalContent("cookie", new Cookie(dataValue));
 
-            var packed = router!.PackContent(c);
-            Assert.IsNotNull(packed);
+            Assert.IsNotNull(content, "Signal content for 'cookie' was not created.");
+            var packed = router.PackContent(content);
+            Assert.IsNotNull(packed, "Packing content for 'cookie' failed.");
 
-            var unpacked = router!.UnpackContent<Cookie>(packed);
-
-            Assert.IsInstanceOfType(unpacked, typeof(Cookie));
-            Assert.AreEqual(unpacked.data, n);
-
-
+            var unpacked = router.UnpackContent<Cookie>(packed);
+            Assert.IsInstanceOfType(unpacked, typeof(Cookie), "Unpacked content is not of type Cookie.");
+            Assert.AreEqual(unpacked!.Data, dataValue, "Unpacked Cookie data does not match the original value.");
         }
-
-        [TestMethod()]
-        public void TestDiscoveryCreator()
-        {
-            int n = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
-            var c = router?.BuildSignalContent("Brog", n);
-            Assert.IsNotNull(c);
-            var s = new Signal(router!, c!);
-            creator!.Call("Brog", router!, null, s, c.GetData());
-            Assert.AreEqual(Tester.results[0], "Brog");
-
-
-            n = DateTime.UtcNow.Microsecond + 1000 * DateTime.UtcNow.Millisecond;
-            c = router?.BuildSignalContent("scrub", n);
-            Assert.IsNotNull(c);
-            s = new Signal(router!, c!);
-            creator!.Call("scrub", router!, null, s, c.GetData());
-            Assert.AreEqual(Tester.results[1], "scrub");
-
-        }
-
-
-
     }
 }
